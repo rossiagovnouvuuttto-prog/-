@@ -285,3 +285,90 @@ tasks.register('auditMembers') {
         println "\n=== отсутствующих членов: ${bad} ==="
     }
 }
+
+// auditMixins checks that the TARGET method exists; it does not check that the
+// handler's parameters match it. That mismatch is invisible to javac and only
+// shows up as InvalidInjectionException at runtime (GameRenderer.render did
+// exactly this). auditSigs compares the two.
+tasks.register('auditSigs') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def cfg = file('src/main/resources/reallyvisuals.mixins.json').text
+        def dir = file('src/main/java/com/reallyvisuals/mixin')
+        def bad = 0
+
+        // find the ')' matching the '(' at index i
+        def close = { String s, int i ->
+            int d = 0
+            for (int j = i; j < s.length(); j++) {
+                if (s.charAt(j) == '(' as char) d++
+                else if (s.charAt(j) == ')' as char) { d--; if (d == 0) return j }
+            }
+            return -1
+        }
+        def simpleOf = { String t ->
+            t.replaceAll(/<.*?>/, '').replaceAll(/\[\]/, '').replaceAll(/^.*\./, '')
+        }
+
+        dir.eachFileRecurse { f ->
+            if (!f.name.endsWith('.java')) return
+            def stem = f.name[0..-6]
+            def rel = dir.toPath().relativize(f.toPath()).toString().replace(File.separator, '.')
+            def key = rel[0..-6]
+            if (!cfg.contains('"' + key + '"')) return   // not loaded at runtime
+
+            def src = f.text
+            def tm = (src =~ /@Mixin\(([\w.]+)\.class\)/)
+            if (!tm) return
+            def simple = tm[0][1].tokenize('.').last()
+            def imp = (src =~ /import ([\w.]+\.${simple});/)
+            def fq = imp ? imp[0][1] : "net.minecraft.${simple}"
+            def cls
+            try { cls = loader.loadClass(fq) } catch (Throwable t) { return }
+
+            def m = src =~ /@Inject\s*\(/
+            while (m.find()) {
+                int o = m.end() - 1
+                int c = close(src, o)
+                if (c < 0) continue
+                def ann = src[(o + 1)..(c - 1)]
+                def nm = (ann =~ /method\s*=\s*"(\w+)/)
+                if (!nm) continue
+                def name = nm[0][1]
+
+                def hm = (src.substring(c) =~ /(?:private|public|protected)\s+[\w<>\[\].]+\s+([\w$]+)\s*\(/)
+                if (!hm.find()) continue
+                int ho = c + hm.end() - 1
+                int hc = close(src, ho)
+                def handler = hm.group(1)
+                def params = src[(ho + 1)..(hc - 1)]
+
+                def ps = []
+                params.split(',').each { p ->
+                    p = p.trim()
+                    if (!p) return
+                    def parts = p.split(/\s+/)
+                    if (parts.length < 2) return
+                    ps << simpleOf(parts[parts.length - 2])
+                }
+                while (ps && ps[-1].startsWith('CallbackInfo')) ps.remove(ps.size() - 1)
+
+                def cands = cls.declaredMethods.findAll { it.name == name }
+                                .collect { it.parameterTypes.collect { pt -> pt.simpleName } }
+                if (!cands) {
+                    bad++
+                    println "\n!! ${f.name}.${handler} -> ${name}: НЕТ ТАКОГО МЕТОДА"
+                    continue
+                }
+                if (!cands.any { it == ps }) {
+                    bad++
+                    println "\n!! ${f.name}.${handler} -> ${name}"
+                    println "     обработчик: (${ps.join(', ')})"
+                    cands.each { println "     в jar:      (${it.join(', ')})" }
+                }
+            }
+        }
+        println "\n=== несовпадений сигнатур: ${bad} ==="
+    }
+}

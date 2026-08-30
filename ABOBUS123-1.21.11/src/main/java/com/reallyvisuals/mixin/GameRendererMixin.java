@@ -52,7 +52,7 @@ public class GameRendererMixin {
    }
 
    @Inject(method = "render", at = @At("HEAD"))
-   private void onRenderHead(float tickDelta, long startTime, boolean tick, CallbackInfo ci) {
+   private void onRenderHead(net.minecraft.client.render.RenderTickCounter counter, boolean tick, CallbackInfo ci) {
       FullBright fullBright = (FullBright)ModuleManager.getInstance().getModule("Full Bright");
       if (fullBright != null) {
          fullBright.tick();

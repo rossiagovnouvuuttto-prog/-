@@ -35,8 +35,11 @@ public class WorldRendererMixin {
     * 1.21.11: setupTerrain is gone; setupFrustum returns the frustum directly,
     * so the culling helper is fed from the return value instead of an argument.
     */
-   @Inject(method = "setupFrustum", at = @At("RETURN"), require = 0)
-   private void onSetupFrustum(CallbackInfoReturnable<Frustum> cir) {
+   @Inject(method = "setupFrustum", at = @At("RETURN"))
+   private void onSetupFrustum(
+      org.joml.Matrix4f positionMatrix, org.joml.Matrix4f projectionMatrix, Vec3d cameraPos,
+      CallbackInfoReturnable<Frustum> cir
+   ) {
       RenderCullingHelper.activeFrustum = cir.getReturnValue();
    }
 
@@ -46,7 +49,7 @@ public class WorldRendererMixin {
     * suppressed through World.setRainGradient in RenderTweaks instead, and the
     * CustomWorld skybox has no cancellable hook on this version.
     */
-   @Inject(method = "drawBlockOutline", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "drawBlockOutline", at = @At("HEAD"), cancellable = true)
    private void onDrawBlockOutline(
       net.minecraft.client.util.math.MatrixStack matrices,
       net.minecraft.client.render.VertexConsumer vertexConsumer,
