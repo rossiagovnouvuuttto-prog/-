@@ -29,7 +29,7 @@ public class ChinaHat extends Module {
    public void render3D(MatrixStack matrices, VertexConsumerProvider vertexConsumers, Camera camera, float tickDelta) {
       if (this.isEnabled()) {
          MinecraftClient mc = MinecraftClient.getInstance();
-         if (mc.player != null && mc.world != null) {
+         if (mc.player != null && mc.world != null && !mc.options.getPerspective().isFirstPerson()) {
             ClientPlayerEntity player = mc.player;
             double camX = camera.getCameraPos().x;
             double camY = camera.getCameraPos().y;

@@ -87,6 +87,9 @@ public final class WorldRenderHandler {
          TargetESP te = (TargetESP) mm.getModule("Target ESP");
          if (te != null && te.isEnabled()) te.onRender3D(matrices, vc, camera, tickDelta);
 
+         ChinaHat ch = (ChinaHat) mm.getModule("China Hat");
+         if (ch != null && ch.isEnabled()) ch.render3D(matrices, vc, camera, tickDelta);
+
          Waypoints wpt = (Waypoints) mm.getModule("Waypoints");
          if (wpt != null && wpt.isEnabled()) wpt.onRender3D(matrices, vc, camera, tickDelta);
       });

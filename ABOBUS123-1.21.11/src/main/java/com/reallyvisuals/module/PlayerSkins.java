@@ -44,6 +44,14 @@ public class PlayerSkins extends Module {
       return mc.player != null && player == mc.player;
    }
 
+   /** 1.21.11: renderers see a PlayerEntityRenderState, not the entity; match on its id. */
+   public boolean appliesTo(int entityId) {
+      if (!this.isEnabled()) return false;
+      if (!this.onlySelf.value) return true;
+      MinecraftClient mc = MinecraftClient.getInstance();
+      return mc.player != null && mc.player.getId() == entityId;
+   }
+
    public Identifier getTexture() {
       switch (this.skin.value) {
          case "Bombardiro":
