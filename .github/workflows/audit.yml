@@ -1,0 +1,48 @@
+name: audit
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ABOBUS123-1.21.11/src/main/java/com/reallyvisuals/mixin/**'
+      - 'ABOBUS123-1.21.11/build.gradle'
+      - '.github/workflows/audit.yml'
+
+defaults:
+  run:
+    working-directory: ABOBUS123-1.21.11
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: auditMixins
+        run: chmod +x gradlew && ./gradlew auditMixins --no-daemon -q
+
+      - name: Dump signatures of the classes we inject into
+        if: always()
+        run: |
+          for C in \
+            net.minecraft.client.gui.hud.InGameHud \
+            net.minecraft.client.gui.hud.DebugHud \
+            net.minecraft.client.render.entity.PlayerEntityRenderer \
+            net.minecraft.client.render.entity.LivingEntityRenderer \
+            net.minecraft.client.render.GameRenderer \
+            net.minecraft.client.render.WorldRenderer \
+            net.minecraft.world.World \
+            net.minecraft.client.world.ClientWorld \
+            net.minecraft.client.gui.screen.Screen \
+            'net.minecraft.client.render.chunk.ChunkBuilder$BuiltChunk' ; do
+              echo ""
+              echo "@@@@@@@@@@@@@@@@ $C"
+              ./gradlew dump --no-daemon -q -Pcls="$C" || echo "  (class not found)"
+          done

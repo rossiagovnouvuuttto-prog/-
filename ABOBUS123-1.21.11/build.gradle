@@ -215,3 +215,26 @@ tasks.register('auditMixins') {
         }
     }
 }
+
+// Like sig2, but also prints fields and walks superclasses. Added for the
+// mixin-fixing pass: @Shadow fields and inherited methods are invisible to sig2.
+tasks.register('dump') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def c = loader.loadClass(project.findProperty('cls'))
+        def filter = (project.findProperty('m') ?: '').toLowerCase()
+        while (c != null && c.name != 'java.lang.Object') {
+            println "\n===== ${c.name}"
+            c.declaredMethods.sort { it.name }.each { mm ->
+                if (filter && !mm.name.toLowerCase().contains(filter)) return
+                println "  ${mm.returnType.simpleName} ${mm.name}(${mm.parameterTypes.collect { it.simpleName }.join(', ')})"
+            }
+            c.declaredFields.sort { it.name }.each { fl ->
+                if (filter && !fl.name.toLowerCase().contains(filter)) return
+                println "  FIELD ${fl.type.simpleName} ${fl.name}"
+            }
+            c = c.superclass
+        }
+    }
+}
