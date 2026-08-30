@@ -1,0 +1,14 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.reallyvisuals.mixin.sodium",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ChunkGraphicsStateMixin",
+    "ChunkCameraContextMixin",
+    "ChunkRenderManagerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

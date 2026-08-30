@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "abobus123",
+  "version": "${version}",
+  "name": "ABOBUS123",
+  "description": "ABOBUS123 visual client for Minecraft 1.21.11 Fabric",
+  "authors": [
+    "ABOBUS123"
+  ],
+  "contact": {},
+  "environment": "client",
+  "mixins": [
+    {
+      "config": "reallyvisuals.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "entrypoints": {
+    "client": [
+      "com.reallyvisuals.ReallyVisualsMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}

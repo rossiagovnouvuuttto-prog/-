@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.reallyvisuals.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "com.reallyvisuals.utils.VanillaChunksMixinPlugin",
+  "client": [
+    "WorldRendererChunkAnimatorMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

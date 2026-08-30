@@ -1,0 +1,12 @@
+=== RESULT ===
+BUILD SUCCESSFUL in 27s
+
+=== TOTAL ERRORS ===
+0
+0
+
+=== TOP ERROR MESSAGES ===
+
+=== WORST FILES ===
+
+=== NON-COMPILE FAILURES (gradle/loom) ===

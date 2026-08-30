@@ -1,0 +1,262 @@
+{
+  "ui.click_soft": {
+    "sounds": [
+      "really:ui/click_soft_01",
+      "really:ui/click_soft_02",
+      "really:ui/click_soft_03"
+    ]
+  },
+  "ui.click_confirm": {
+    "sounds": [
+      "really:ui/click_confirm"
+    ]
+  },
+  "ui.navigate": {
+    "sounds": [
+      "really:ui/navigate"
+    ]
+  },
+  "ui.gui_open": {
+    "sounds": [
+      "really:ui/gui_open"
+    ]
+  },
+  "ui.gui_close": {
+    "sounds": [
+      "really:ui/gui_close"
+    ]
+  },
+  "ui.config_save": {
+    "sounds": [
+      "really:ui/config_save"
+    ]
+  },
+  "ui.editor_enter": {
+    "sounds": [
+      "really:ui/editor_enter"
+    ]
+  },
+  "ui.editor_exit": {
+    "sounds": [
+      "really:ui/editor_exit"
+    ]
+  },
+  "ui.toggle_on": {
+    "sounds": [
+      "really:ui/toggle_on"
+    ]
+  },
+  "ui.toggle_off": {
+    "sounds": [
+      "really:ui/toggle_off"
+    ]
+  },
+  "ui.module_expand": {
+    "sounds": [
+      "really:ui/module_expand"
+    ]
+  },
+  "ui.module_collapse": {
+    "sounds": [
+      "really:ui/module_collapse"
+    ]
+  },
+  "ui.slider_grab": {
+    "sounds": [
+      "really:ui/slider_grab"
+    ]
+  },
+  "ui.slider_tick": {
+    "sounds": [
+      "really:ui/slider_tick"
+    ]
+  },
+  "ui.slider_release": {
+    "sounds": [
+      "really:ui/slider_release"
+    ]
+  },
+  "ui.dropdown_open": {
+    "sounds": [
+      "really:ui/dropdown_open"
+    ]
+  },
+  "ui.dropdown_close": {
+    "sounds": [
+      "really:ui/dropdown_close"
+    ]
+  },
+  "ui.dropdown_select": {
+    "sounds": [
+      "really:ui/dropdown_select"
+    ]
+  },
+  "ui.color_open": {
+    "sounds": [
+      "really:ui/color_open"
+    ]
+  },
+  "ui.color_close": {
+    "sounds": [
+      "really:ui/color_close"
+    ]
+  },
+  "ui.color_pick": {
+    "sounds": [
+      "really:ui/color_pick"
+    ]
+  },
+  "ui.search_focus": {
+    "sounds": [
+      "really:ui/search_focus"
+    ]
+  },
+  "ui.search_type": {
+    "sounds": [
+      "really:ui/search_type_01",
+      "really:ui/search_type_02",
+      "really:ui/search_type_03"
+    ]
+  },
+  "ui.keybind_listen": {
+    "sounds": [
+      "really:ui/keybind_listen"
+    ]
+  },
+  "ui.keybind_set": {
+    "sounds": [
+      "really:ui/keybind_set"
+    ]
+  },
+  "ui.favorite_add": {
+    "sounds": [
+      "really:ui/favorite_add"
+    ]
+  },
+  "ui.favorite_remove": {
+    "sounds": [
+      "really:ui/favorite_remove"
+    ]
+  },
+  "ui.hud_grab": {
+    "sounds": [
+      "really:ui/hud_grab"
+    ]
+  },
+  "ui.hud_snap": {
+    "sounds": [
+      "really:ui/hud_snap"
+    ]
+  },
+  "ui.hud_drop": {
+    "sounds": [
+      "really:ui/hud_drop"
+    ]
+  },
+  "ui.hud_anchor": {
+    "sounds": [
+      "really:ui/hud_anchor"
+    ]
+  },
+  "ui.hud_scale": {
+    "sounds": [
+      "really:ui/hud_scale"
+    ]
+  },
+  "ui.notif_info": {
+    "sounds": [
+      "really:ui/notif_info"
+    ]
+  },
+  "ui.notif_success": {
+    "sounds": [
+      "really:ui/notif_success"
+    ]
+  },
+  "ui.notif_alert": {
+    "sounds": [
+      "really:ui/notif_alert"
+    ]
+  },
+  "ui.chat_mention": {
+    "sounds": [
+      "really:ui/chat_mention"
+    ]
+  },
+  "railgun.equip": {
+    "sounds": [
+      {
+        "name": "really:orbital_railgun/equip",
+        "stream": false
+      }
+    ]
+  },
+  "railgun.scope_on": {
+    "sounds": [
+      {
+        "name": "really:orbital_railgun/scope_on",
+        "stream": false
+      }
+    ]
+  },
+  "hit.bell": {
+    "sounds": [
+      "really:hits/bell"
+    ]
+  },
+  "hit.bonk": {
+    "sounds": [
+      "really:hits/bonk"
+    ]
+  },
+  "hit.bubble": {
+    "sounds": [
+      "really:hits/bubble"
+    ]
+  },
+  "hit.hit1": {
+    "sounds": [
+      "really:hits/hit1"
+    ]
+  },
+  "hit.hit2": {
+    "sounds": [
+      "really:hits/hit2"
+    ]
+  },
+  "hit.hit3": {
+    "sounds": [
+      "really:hits/hit3"
+    ]
+  },
+  "hit.moan1": {
+    "sounds": [
+      "really:hits/moan1"
+    ]
+  },
+  "hit.moan2": {
+    "sounds": [
+      "really:hits/moan2"
+    ]
+  },
+  "hit.moan3": {
+    "sounds": [
+      "really:hits/moan3"
+    ]
+  },
+  "hit.moan4": {
+    "sounds": [
+      "really:hits/moan4"
+    ]
+  },
+  "hit.pop": {
+    "sounds": [
+      "really:hits/pop"
+    ]
+  },
+  "hit.uwu": {
+    "sounds": [
+      "really:hits/uwu"
+    ]
+  }
+}

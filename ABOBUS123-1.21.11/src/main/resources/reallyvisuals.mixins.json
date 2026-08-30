@@ -1,0 +1,40 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.reallyvisuals.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "GameRendererMixin",
+    "CameraMixin",
+    "InGameHudMixin",
+    "PlayerListHudMixin",
+    "ChatScreenMixin",
+    "ChatHudMixin",
+    "WorldRendererMixin",
+    "PlayerEntityRendererMixin",
+    "accessor.ItemCooldownManagerAccessor",
+    "accessor.MinecraftClientAccessor",
+    "accessor.KeyBindingAccessor",
+    "HeldItemRendererMixin",
+    "BackgroundRendererMixin",
+    "ClientWorldMixin",
+    "LivingEntityRendererMixin",
+    "ClientPlayerInteractionManagerMixin",
+    "BossBarHudMixin",
+    "InGameOverlayRendererMixin",
+    "WorldMixin",
+    "KeyboardMixin",
+    "HandledScreenMixin",
+    "EntityMixin",
+    "MouseMixin",
+    "ScreenMixin",
+    "TextRendererMixin",
+    "TextFieldWidgetMixin",
+    "ClientPlayerEntityMixin",
+    "DeathScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "mixins": []
+}

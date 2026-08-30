@@ -1,0 +1,217 @@
+plugins {
+    id 'fabric-loom' version '1.14-SNAPSHOT'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    maven {
+        name = 'Fabric'
+        url = uri('https://maven.fabricmc.net/')
+    }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings  "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': inputs.properties.version
+    }
+}
+
+java {
+
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xmaxerrs' << '10000'
+}
+
+loom {
+    // Loom >=1.6 remaps mixins itself; refmap generation is no longer needed.
+    mixin {
+        useLegacyMixinAp = false
+    }
+
+    runs {
+        client {
+            programArgs '--username', project.findProperty('mcName') ?: 'ABOBUS123_Test'
+            vmArgs '-Xmx2G'
+        }
+    }
+}
+
+tasks.register('apiDump') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def c = loader.loadClass(project.findProperty('cls') ?: 'net.minecraft.client.render.RenderLayer')
+        c.declaredMethods.findAll { java.lang.reflect.Modifier.isStatic(it.modifiers) }
+                         .collect { it.name }.unique().sort().each { println it }
+        println '--- fields ---'
+        c.declaredFields.findAll { java.lang.reflect.Modifier.isStatic(it.modifiers) }
+                        .collect { it.name }.sort().each { println it }
+    }
+}
+
+tasks.register('findApi') {
+    doLast {
+        def needle = (project.findProperty('q') ?: 'DebugFilledBox').toLowerCase()
+        sourceSets.main.compileClasspath.findAll { it.name.endsWith('.jar') }.each { f ->
+            try {
+                new java.util.zip.ZipFile(f).withCloseable { zip ->
+                    zip.entries().findAll { it.name.endsWith('.class') && it.name.startsWith('net/minecraft') }.each { e ->
+                        def cn = e.name[0..-7].replace('/', '.')
+                        try {
+                            def c = Class.forName(cn, false, new URLClassLoader([f.toURI().toURL()] as URL[]))
+                            c.declaredMethods.each { m ->
+                                if (m.name.toLowerCase().contains(needle)) println "$cn  ->  $m.name  returns $m.returnType.simpleName"
+                            }
+                            c.declaredFields.each { fl ->
+                                if (fl.name.toLowerCase().contains(needle)) println "$cn  ->  FIELD $fl.name : $fl.type.simpleName"
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+}
+
+tasks.register('findLayers') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def target = loader.loadClass('net.minecraft.client.render.RenderLayer')
+        def M = java.lang.reflect.Modifier
+        cp.findAll { it.name.endsWith('.jar') }.each { f ->
+            try {
+                new java.util.zip.ZipFile(f).withCloseable { zip ->
+                    zip.entries().each { e ->
+                        if (!e.name.endsWith('.class') || !e.name.startsWith('net/minecraft')) return
+                        try {
+                            def c = loader.loadClass(e.name[0..-7].replace('/', '.'))
+                            def hits = []
+                            c.declaredMethods.each { m ->
+                                if (M.isStatic(m.modifiers) && target.isAssignableFrom(m.returnType)) hits << m.name
+                            }
+                            c.declaredFields.each { fl ->
+                                if (M.isStatic(fl.modifiers) && target.isAssignableFrom(fl.type)) hits << ('FIELD ' + fl.name)
+                            }
+                            if (hits) println "${c.name} : ${hits.unique().sort().join(', ')}"
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+}
+
+tasks.register('sig') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def c = loader.loadClass(project.findProperty('cls'))
+        def M = java.lang.reflect.Modifier
+        c.declaredMethods.findAll { M.isStatic(it.modifiers) && M.isPublic(it.modifiers) }.sort { it.name }.each { m ->
+            println "${m.returnType.simpleName} ${m.name}(${m.parameterTypes.collect { it.simpleName }.join(', ')})"
+        }
+    }
+}
+
+tasks.register('sig2') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def c = loader.loadClass(project.findProperty('cls'))
+        def filter = (project.findProperty('m') ?: '').toLowerCase()
+        c.declaredMethods.sort { it.name }.each { mm ->
+            if (filter && !mm.name.toLowerCase().contains(filter)) return
+            println "${mm.returnType.simpleName} ${mm.name}(${mm.parameterTypes.collect { it.simpleName }.join(', ')})"
+        }
+    }
+}
+
+tasks.register('findCls') {
+    doLast {
+        def needle = (project.findProperty('q') ?: 'WorldRender').toLowerCase()
+        sourceSets.main.compileClasspath.files.findAll { it.name.endsWith('.jar') }.each { f ->
+            try {
+                new java.util.zip.ZipFile(f).withCloseable { zip ->
+                    zip.entries().each { e ->
+                        if (e.name.endsWith('.class') && e.name.toLowerCase().contains(needle)) {
+                            println e.name[0..-7].replace('/', '.') + "   [" + f.name + "]"
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+}
+
+tasks.register('findRet') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def target = loader.loadClass(project.findProperty('t'))
+        cp.findAll { it.name.contains('minecraft') }.each { f ->
+            new java.util.zip.ZipFile(f).withCloseable { zip ->
+                zip.entries().each { e ->
+                    if (!e.name.endsWith('.class') || !e.name.startsWith('net/minecraft')) return
+                    try {
+                        def c = loader.loadClass(e.name[0..-7].replace('/','.'))
+                        c.declaredMethods.each { m ->
+                            if (target.isAssignableFrom(m.returnType)) println "${c.simpleName}.${m.name}()"
+                        }
+                        c.declaredFields.each { fl ->
+                            if (target.isAssignableFrom(fl.type)) println "${c.simpleName} FIELD ${fl.name}"
+                        }
+                    } catch (Throwable ig) {}
+                }
+            }
+        }
+    }
+}
+
+tasks.register('auditMixins') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def dir = file('src/main/java/com/reallyvisuals/mixin')
+        dir.eachFileRecurse { f ->
+            if (!f.name.endsWith('.java')) return
+            def src = f.text
+            def tm = (src =~ /@Mixin\(([\w.]+)\.class\)/)
+            if (!tm) return
+            def simple = tm[0][1].tokenize('.').last()
+            def imp = (src =~ /import ([\w.]+\.${simple});/)
+            def fq = imp ? imp[0][1] : "net.minecraft.${simple}"
+            def cls
+            try { cls = loader.loadClass(fq) } catch (Throwable t) { println "\n!! ${f.name}: класс ${fq} НЕ НАЙДЕН"; return }
+            def names = (src =~ /method = "(\w+)/).collect { it[1] }.unique()
+            if (!names) return
+            println "\n### ${f.name} -> ${simple}"
+            names.each { n ->
+                def ms = cls.declaredMethods.findAll { it.name == n }
+                if (!ms) println "   !! ${n} — НЕТ ТАКОГО МЕТОДА"
+                else ms.each { m ->
+                    println "   ${n}(${m.parameterTypes.collect{it.simpleName}.join(', ')})"
+                }
+            }
+        }
+    }
+}
