@@ -337,8 +337,14 @@ tasks.register('auditSigs') {
                 if (!nm) continue
                 def name = nm[0][1]
 
-                def hm = (src.substring(c) =~ /(?:private|public|protected)\s+[\w<>\[\].]+\s+([\w$]+)\s*\(/)
-                if (!hm.find()) continue
+                // modifiers must be consumed explicitly: 'private static void foo(' used
+                // to fall through this regex, silently skipping the whole injection
+                def hm = (src.substring(c) =~ /(?:private|public|protected)\s+(?:(?:static|final|synchronized)\s+)*[\w<>\[\].]+\s+([\w$]+)\s*\(/)
+                if (!hm.find()) {
+                    bad++
+                    println "\n?? ${f.name} -> ${name}: НЕ РАЗОБРАН ОБРАБОТЧИК (проверка не выполнена)"
+                    continue
+                }
                 int ho = c + hm.end() - 1
                 int hc = close(src, ho)
                 def handler = hm.group(1)
@@ -354,8 +360,9 @@ tasks.register('auditSigs') {
                 }
                 while (ps && ps[-1].startsWith('CallbackInfo')) ps.remove(ps.size() - 1)
 
-                def cands = cls.declaredMethods.findAll { it.name == name }
-                                .collect { it.parameterTypes.collect { pt -> pt.simpleName } }
+                def found = cls.declaredMethods.findAll { it.name == name }
+                def cands = found.collect { it.parameterTypes.collect { pt -> pt.simpleName } }
+                def fq = found.collect { it.parameterTypes.collect { pt -> pt.name } }
                 if (!cands) {
                     bad++
                     println "\n!! ${f.name}.${handler} -> ${name}: НЕТ ТАКОГО МЕТОДА"
@@ -365,7 +372,10 @@ tasks.register('auditSigs') {
                     bad++
                     println "\n!! ${f.name}.${handler} -> ${name}"
                     println "     обработчик: (${ps.join(', ')})"
-                    cands.each { println "     в jar:      (${it.join(', ')})" }
+                    cands.eachWithIndex { cand, i ->
+                        println "     в jar:      (${cand.join(', ')})"
+                        println "       полностью: (${fq[i].join(', ')})"
+                    }
                 }
             }
         }
