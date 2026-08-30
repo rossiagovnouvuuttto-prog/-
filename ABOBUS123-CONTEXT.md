@@ -48,7 +48,16 @@
 ./gradlew findRet -Pt=<тип>                     # кто возвращает тип
 ./gradlew auditMixins                           # сверить ВСЕ инъекции разом
 ./gradlew auditMembers                          # сверить @Shadow/@Accessor/@Invoker
+./gradlew auditSigs                             # сверить ПАРАМЕТРЫ обработчиков
 ```
+
+Три аудита ловят три разных класса ошибок, и все три невидимы компилятору:
+
+| Задача | Что ловит | Как проявлялось |
+|---|---|---|
+| `auditMixins` | целевого метода нет | `Cannot remap` при сборке |
+| `auditMembers` | `@Shadow`/`@Accessor` на удалённый член | `InGameHud.scaledWidth` |
+| `auditSigs` | параметры обработчика не те | `InvalidInjectionException` в рантайме |
 
 `auditMembers` нужен отдельно: `@Shadow` на несуществующее поле
 компилируется молча и падает только в рантайме. Так и проскочил
@@ -184,6 +193,36 @@ failed injection check, (0/1) succeeded. Scanned 0 target(s).
 по одному имени он ловил ещё и мостовой перегруз с `Entity`.
 
 Модули **Hit Color** и **Aspect Ratio** таким образом сохранены, а не потеряны.
+
+## Второй лог (20:00) — ещё два краша
+
+`LivingEntityRenderer` применился, краш переехал дальше:
+
+```
+Invalid descriptor on GameRendererMixin->@Inject::onRenderHead
+Expected (Lnet/minecraft/class_9779;Z...)V but found (FJZ...)V
+```
+
+| Миксин | Было | Стало |
+|---|---|---|
+| `GameRendererMixin.onRenderHead` | `(float, long, boolean)` | `render(RenderTickCounter, boolean)` |
+| `CameraMixin.applyFreeLook` | `BlockView` первым параметром | `update(World, …)` — был под `require = 0`, то есть Free Look не работал вообще |
+| `WorldRendererMixin.onSetupFrustum` | только `CallbackInfoReturnable` | `+ (Matrix4f, Matrix4f, Vec3d)` — тоже заглушен, отсечение по фрустуму не питалось |
+
+`Camera` и `WorldRenderer` нашлись не по крашу, а задачей `auditSigs`,
+написанной после второго лога.
+
+## Состояние аудитов
+
+```
+auditMixins   — чисто (остались только миксины-сироты, они не грузятся)
+auditMembers  — 0 отсутствующих членов
+auditSigs     — 0 несовпадений сигнатур
+```
+
+`require = 0` в загружаемых миксинах больше нет ни одного: все цели,
+члены и сигнатуры сверены с jar'ом, поэтому `defaultRequire: 1`
+действует на весь конфиг и дрейф падает громко.
 
 ## Что осталось
 
