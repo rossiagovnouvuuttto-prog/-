@@ -43,10 +43,18 @@
 
 ```
 ./gradlew sig2   -Pcls=<класс> [-Pm=<фильтр>]   # сигнатуры методов
+./gradlew dump   -Pcls=<класс> [-Pm=<фильтр>]   # + поля и родительские классы
 ./gradlew findCls -Pq=<подстрока>               # где лежит класс
 ./gradlew findRet -Pt=<тип>                     # кто возвращает тип
 ./gradlew auditMixins                           # сверить ВСЕ инъекции разом
 ```
+
+Если `maven.fabricmc.net` недоступен локально, всё это гоняется в CI:
+`.github/workflows/audit.yml` (вкладка Actions → audit). Там же лежит
+готовый список классов для `dump`.
+
+Проект лежит в подкаталоге `ABOBUS123-1.21.11/`, поэтому оба workflow
+используют `working-directory`.
 
 `auditMixins` — главный. Показывает по каждому миксину, существует ли
 целевой класс и метод. Экономит цикл «сборка → запуск → краш».
@@ -109,7 +117,52 @@
 - Анимация чата: общий сдвиг блока вместо построчного
 - PerformanceBoost при выключении вернёт графику на FANCY
 
+## Проход по миксинам (сверено с замапленным jar через CI)
+
+Несовпадений remap было 12 → стало 4. Оставшиеся 4 сидят в миксинах,
+которые не подключены ни к одному конфигу, то есть в рантайм не идут.
+
+### Починено
+
+| Было | Стало | Что вернулось |
+|---|---|---|
+| `InGameHud.scaledWidth/scaledHeight` | полей нет → `DrawContext.getScaledWindowWidth/Height()` | HUD, скорборд, ClickPearl |
+| `GameRenderer.bobViewWhenHurt` | `tiltViewWhenHurt` | твик «Тряска урона» |
+| `ClientWorld.playSound(...FFZ)` | `(...FFZJ)` — добавился `long seed` | Hit Sounds: снятие ванильного крита |
+| `PlayerEntityRenderer.getTexture(Entity)` | `getTexture(PlayerEntityRenderState)` | Player Skins |
+| `PlayerEntityRenderer.scale(Entity,…,float)` | `scale(PlayerEntityRenderState, MatrixStack)` | морф Player Skins |
+| `PlayerEntityRenderer.render` (метода нет) | `ChinaHat.render3D` из `WorldRenderHandler` | China Hat (локальный игрок) |
+| `World.getTime` | метода нет; `getTimeOfDay` уже перехвачен | Time Changer не пострадал |
+| `Screen.renderTooltip` | метода нет; `HandledScreen.drawMouseoverTooltip` жив | Shulker Preview не пострадал |
+
+Снят `require = 0` со всех инъекций, чьи цели подтверждены аудитом, —
+теперь они падают громко, а не отключаются молча. Это тот же принцип,
+что и `defaultRequire: 1`, только на уровне отдельной инъекции.
+
+### Осталось потерянным (цели правда удалены)
+
+`DebugHud.getLeftText`, `WorldRenderer.renderLayer` ×2,
+`ChunkBuilder$BuiltChunk.setOrigin` — строки F3 и анимация чанков,
+уже были в списке выше.
+
+### Миксины-сироты (файл есть, в конфиге нет → не грузятся)
+
+`EntityRenderDispatcherMixin`, `ClientWorldPropertiesMixin`,
+`BuiltChunkMixin`, `LivingEntityMixin`, `ItemEntityRendererMixin`,
+`DebugHudMixin`, `accessor.WorldRendererAccessor`.
+Оставлены как заготовки для восстановления; кода они сейчас не меняют.
+
+`reallyvisuals.sodium.mixins.json` и `reallyvisuals.vanillachunks.mixins.json`
+не перечислены в `fabric.mod.json`, поэтому тоже не грузятся.
+
+### Выпотрошены до пустых классов при порте (в списке потерь их не было)
+
+`ArmorFeatureRendererMixin`, `FeatureRendererMixin`, `OverlayTextureMixin` —
+остались `public class X {}` без единой инъекции. Что именно они делали
+в 1.18.2, по текущему исходнику не восстановить: нужен старый проект.
+
 ## Что осталось
 
-Прогнать `auditMixins`, собрать, запустить игру, править несовпадения
-сигнатур по логу. Крупных несовпадений на момент паузы не осталось.
+Запустить игру и пройти лог. China Hat теперь рисуется только на своём
+игроке — на чужих нужен `OrderedRenderCommandQueue`, тот же блокер,
+что и у режима «Свеня».
