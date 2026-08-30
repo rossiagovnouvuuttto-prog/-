@@ -238,3 +238,50 @@ tasks.register('dump') {
         }
     }
 }
+
+// auditMixins only checks @Inject targets. @Shadow / @Accessor / @Invoker
+// members compile fine even when the target member is gone (that is how
+// InGameHud.scaledWidth slipped through), so they need checking too.
+tasks.register('auditMembers') {
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def dir = file('src/main/java/com/reallyvisuals/mixin')
+        def bad = 0
+        dir.eachFileRecurse { f ->
+            if (!f.name.endsWith('.java')) return
+            def src = f.text
+            def tm = (src =~ /@Mixin\(([\w.]+)\.class\)/)
+            if (!tm) return
+            def simple = tm[0][1].tokenize('.').last()
+            def imp = (src =~ /import ([\w.]+\.${simple});/)
+            def fq = imp ? imp[0][1] : "net.minecraft.${simple}"
+            def cls
+            try { cls = loader.loadClass(fq) } catch (Throwable t) {
+                println "\n!! ${f.name}: класс ${fq} НЕ НАЙДЕН"; return
+            }
+            def wanted = []
+            // @Accessor("x") / @Invoker("x") name the member directly
+            (src =~ /@(?:Accessor|Invoker)\("(\w+)"\)/).each { wanted << it[1] }
+            // @Shadow (optionally @Final) then a field or method declaration
+            (src =~ /@Shadow[^\n]*\n(?:\s*@\w+[^\n]*\n)*\s*[\w<>\[\], .]+?\s+(\w+)\s*[;(]/).each { wanted << it[1] }
+            wanted = wanted.unique()
+            if (!wanted) return
+
+            def names = [] as Set
+            for (def c = cls; c != null && c != Object; c = c.superclass) {
+                c.declaredMethods.each { names << it.name }
+                c.declaredFields.each { names << it.name }
+            }
+            def missing = wanted.findAll { !names.contains(it) }
+            if (missing) {
+                bad += missing.size()
+                println "\n!! ${f.name} -> ${simple}"
+                missing.each { println "   !! ${it} — НЕТ ТАКОГО ЧЛЕНА" }
+            } else {
+                println "\nOK ${f.name} -> ${simple}: ${wanted.join(', ')}"
+            }
+        }
+        println "\n=== отсутствующих членов: ${bad} ==="
+    }
+}

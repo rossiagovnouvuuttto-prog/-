@@ -16,23 +16,31 @@ import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(GameRenderer.class)
 public class GameRendererMixin {
-   @Redirect(
-      method = "getBasicProjectionMatrix",
-      at = @At(value = "INVOKE", target = "Lnet/minecraft/util/math/Matrix4f;viewboxMatrix(DFFF)Lnet/minecraft/util/math/Matrix4f;")
-   )
-   private Matrix4f redirectViewboxMatrix(double fov, float aspectRatio, float cameraDepth, float viewDistance) {
-      AspectRatio aspectModule = (AspectRatio)ModuleManager.getInstance().getModule("Aspect Ratio");
-      if (aspectModule != null && aspectModule.isEnabled()) {
-         aspectRatio = aspectModule.getRatio();
+   /**
+    * 1.21.11: the old @Redirect targeted net.minecraft.util.math.Matrix4f,
+    * a class removed back in 1.19, so it could never bind and would crash on
+    * load. getBasicProjectionMatrix now returns an org.joml.Matrix4f, and in a
+    * perspective matrix m00 == m11 / aspect -- so the ratio is retuned in place
+    * without having to guess the near/far planes.
+    */
+   @Inject(method = "getBasicProjectionMatrix", at = @At("RETURN"), cancellable = true)
+   private void abobus123$aspectRatio(float fov, CallbackInfoReturnable<Matrix4f> cir) {
+      AspectRatio aspectModule = (AspectRatio) ModuleManager.getInstance().getModule("Aspect Ratio");
+      if (aspectModule == null || !aspectModule.isEnabled()) {
+         return;
       }
-
-      return new Matrix4f().perspective((float) Math.toRadians(fov), aspectRatio, cameraDepth, viewDistance);
+      float ratio = aspectModule.getRatio();
+      if (ratio <= 0.0F) {
+         return;
+      }
+      Matrix4f matrix = new Matrix4f(cir.getReturnValue());
+      matrix.m00(matrix.m11() / ratio);
+      cir.setReturnValue(matrix);
    }
 
    @Inject(method = "getFov", at = @At("RETURN"), cancellable = true)

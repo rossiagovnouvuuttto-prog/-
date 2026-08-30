@@ -28,6 +28,10 @@ jobs:
       - name: auditMixins
         run: chmod +x gradlew && ./gradlew auditMixins --no-daemon -q
 
+      - name: auditMembers
+        if: always()
+        run: ./gradlew auditMembers --no-daemon -q
+
       - name: Dump signatures of the classes we inject into
         if: always()
         run: |
