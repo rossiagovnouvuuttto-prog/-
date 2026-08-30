@@ -47,7 +47,12 @@
 ./gradlew findCls -Pq=<подстрока>               # где лежит класс
 ./gradlew findRet -Pt=<тип>                     # кто возвращает тип
 ./gradlew auditMixins                           # сверить ВСЕ инъекции разом
+./gradlew auditMembers                          # сверить @Shadow/@Accessor/@Invoker
 ```
+
+`auditMembers` нужен отдельно: `@Shadow` на несуществующее поле
+компилируется молча и падает только в рантайме. Так и проскочил
+`InGameHud.scaledWidth`. На текущем коде — 0 отсутствующих.
 
 Если `maven.fabricmc.net` недоступен локально, всё это гоняется в CI:
 `.github/workflows/audit.yml` (вкладка Actions → audit). Там же лежит
@@ -161,8 +166,27 @@
 остались `public class X {}` без единой инъекции. Что именно они делали
 в 1.18.2, по текущему исходнику не восстановить: нужен старый проект.
 
+## Пройден лог запуска (FCL, Android, 30.08)
+
+Игра падала на старте, один краш:
+
+```
+InjectionError: Redirector redirectModelRender ... LivingEntityRendererMixin
+failed injection check, (0/1) succeeded. Scanned 0 target(s).
+```
+
+| Миксин | Причина | Чем заменено |
+|---|---|---|
+| `LivingEntityRendererMixin` | `@Redirect` на `Model.render` — вызова больше нет, всё через `OrderedRenderCommandQueue` | `@Inject` в `getMixColor(LivingEntityRenderState)`, флаг `state.hurt`; альфа ванилы сохранена, меняется только оттенок |
+| `GameRendererMixin` | `@Redirect` на `net.minecraft.util.math.Matrix4f` — класс удалён в 1.19; следующий краш в очереди | `@Inject` в `getBasicProjectionMatrix`, правка `m00 = m11 / ratio` прямо в матрице |
+
+`hasLabel` прибит к дескриптору `(Lnet/minecraft/entity/LivingEntity;D)Z` —
+по одному имени он ловил ещё и мостовой перегруз с `Entity`.
+
+Модули **Hit Color** и **Aspect Ratio** таким образом сохранены, а не потеряны.
+
 ## Что осталось
 
-Запустить игру и пройти лог. China Hat теперь рисуется только на своём
+Перезапустить игру и пройти лог заново. China Hat теперь рисуется только на своём
 игроке — на чужих нужен `OrderedRenderCommandQueue`, тот же блокер,
 что и у режима «Свеня».
