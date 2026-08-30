@@ -32,6 +32,9 @@ jobs:
         if: always()
         run: |
           for C in \
+            net.minecraft.client.render.entity.state.PlayerEntityRenderState \
+            net.minecraft.client.render.entity.state.LivingEntityRenderState \
+            net.minecraft.client.render.entity.state.EntityRenderState \
             net.minecraft.client.gui.hud.InGameHud \
             net.minecraft.client.gui.hud.DebugHud \
             net.minecraft.client.render.entity.PlayerEntityRenderer \

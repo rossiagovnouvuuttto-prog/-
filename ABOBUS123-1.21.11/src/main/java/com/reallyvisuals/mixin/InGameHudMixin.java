@@ -31,7 +31,6 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.scoreboard.ScoreboardObjective;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -39,10 +38,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(InGameHud.class)
 public abstract class InGameHudMixin {
-   @Shadow
-   private int scaledWidth;
-   @Shadow
-   private int scaledHeight;
    @Unique
    private static AnimationUtils.Animation hotbarAnimation = new AnimationUtils.Animation(0.0F);
    @Unique
@@ -68,7 +63,7 @@ public abstract class InGameHudMixin {
          MinecraftClient client = MinecraftClient.getInstance();
          if (client.player != null) {
             int selectedSlot = client.player.getInventory().getSelectedSlot();
-            float targetX = this.scaledWidth / 2 - 91 - 1 + selectedSlot * 20;
+            float targetX = context.getScaledWindowWidth() / 2 - 91 - 1 + selectedSlot * 20;
             if (this.lastSlot == -1) {
                hotbarAnimation.force(targetX);
             } else if (this.lastSlot != selectedSlot) {
@@ -107,7 +102,7 @@ public abstract class InGameHudMixin {
    private float sbShiftX = 0.0F;
    private float sbShiftY = 0.0F;
 
-   @Inject(method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V", at = @At("HEAD"), cancellable = true)
    private void onRenderScoreboardSidebar(DrawContext context, ScoreboardObjective objective, CallbackInfo ci) {
       RenderTweaks tweaks = (RenderTweaks)ModuleManager.getInstance().getModule("Render Tweaks");
       if (tweaks != null && tweaks.isEnabled() && tweaks.tweaks.isSelected("Скорборд")) {
@@ -115,8 +110,8 @@ public abstract class InGameHudMixin {
       } else {
          float dx = HUDManager.scoreboard.x - HUDManager.scoreboard.defaultX;
          float dy = HUDManager.scoreboard.y - HUDManager.scoreboard.defaultY;
-         float maxShiftX = Math.max(0.0F, this.scaledWidth - 40.0F);
-         float maxShiftY = Math.max(0.0F, this.scaledHeight - 40.0F);
+         float maxShiftX = Math.max(0.0F, context.getScaledWindowWidth() - 40.0F);
+         float maxShiftY = Math.max(0.0F, context.getScaledWindowHeight() - 40.0F);
          dx = Math.max(-maxShiftX, Math.min(dx, 0.0F));
          dy = Math.max(-maxShiftY, Math.min(dy, maxShiftY));
          this.sbShiftX = dx;
@@ -128,7 +123,7 @@ public abstract class InGameHudMixin {
       }
    }
 
-   @Inject(method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V", at = @At("RETURN"), require = 0)
+   @Inject(method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V", at = @At("RETURN"))
    private void onRenderScoreboardSidebarEnd(DrawContext context, ScoreboardObjective objective, CallbackInfo ci) {
       if (this.sbShiftX != 0.0F || this.sbShiftY != 0.0F) {
          context.getMatrices().popMatrix();
@@ -140,11 +135,11 @@ public abstract class InGameHudMixin {
    @Inject(method = "render", at = @At("TAIL"))
    private void onRenderHUDTail(DrawContext context, RenderTickCounter counter, CallbackInfo ci) {
       float tickDelta = counter.getTickProgress(false);
-      HUDManager.clampAll(this.scaledWidth, this.scaledHeight);
+      HUDManager.clampAll(context.getScaledWindowWidth(), context.getScaledWindowHeight());
 
       ClickPearl clickPearl = (ClickPearl)ModuleManager.getInstance().getModule("Click Pearl");
       if (clickPearl != null && clickPearl.isEnabled()) {
-         clickPearl.renderHotbarKeybind(context, this.scaledWidth, this.scaledHeight);
+         clickPearl.renderHotbarKeybind(context, context.getScaledWindowWidth(), context.getScaledWindowHeight());
       }
 
       Watermark watermark;

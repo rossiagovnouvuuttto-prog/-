@@ -19,14 +19,13 @@ public class ClientWorldMixin {
    // 1.21.11: ClientWorld.getSkyColor is gone; sky colour moved into the render pipeline.
 
    @Inject(
-      method = "playSound(DDDLnet/minecraft/sound/SoundEvent;Lnet/minecraft/sound/SoundCategory;FFZ)V",
+      method = "playSound(DDDLnet/minecraft/sound/SoundEvent;Lnet/minecraft/sound/SoundCategory;FFZJ)V",
       at = @At("HEAD"),
-      cancellable = true,
-      require = 0
+      cancellable = true
    )
    private void abobus123$onPlaySound(
       double x, double y, double z, SoundEvent sound, SoundCategory category,
-      float volume, float pitch, boolean useDistance, CallbackInfo ci
+      float volume, float pitch, boolean useDistance, long seed, CallbackInfo ci
    ) {
       HitSounds hitSounds = (HitSounds) ModuleManager.getInstance().getModule("Hit Sounds");
       if (hitSounds != null

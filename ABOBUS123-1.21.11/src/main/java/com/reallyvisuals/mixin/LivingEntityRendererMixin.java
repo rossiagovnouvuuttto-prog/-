@@ -60,7 +60,7 @@ public class LivingEntityRendererMixin {
       model.render(matrices, vertices, light, overlay, argb);
    }
 
-   @Inject(method = "hasLabel", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "hasLabel", at = @At("HEAD"), cancellable = true)
    private void onHasLabel(net.minecraft.entity.LivingEntity livingEntity, double d, CallbackInfoReturnable<Boolean> cir) {
       SelfNametag selfNametag = (SelfNametag)ModuleManager.getInstance().getModule("Self Nametag");
       if (selfNametag != null && selfNametag.isEnabled()) {

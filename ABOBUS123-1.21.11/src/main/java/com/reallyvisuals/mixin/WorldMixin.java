@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(World.class)
 public class WorldMixin {
-   @Inject(method = "getTimeOfDay", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "getTimeOfDay", at = @At("HEAD"), cancellable = true)
    private void onGetTimeOfDay(CallbackInfoReturnable<Long> cir) {
       TimeChanger timeChanger = (TimeChanger)ModuleManager.getInstance().getModule("Time Changer");
       if (timeChanger != null && timeChanger.isEnabled()) {
@@ -19,15 +19,8 @@ public class WorldMixin {
       }
    }
 
-   @Inject(method = "getTime", at = @At("HEAD"), cancellable = true, require = 0)
-   private void onGetTime(CallbackInfoReturnable<Long> cir) {
-      TimeChanger timeChanger = (TimeChanger)ModuleManager.getInstance().getModule("Time Changer");
-      if (timeChanger != null && timeChanger.isEnabled()) {
-         cir.setReturnValue(timeChanger.getTime());
-      }
-   }
 
-   @Inject(method = "getRainGradient", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "getRainGradient", at = @At("HEAD"), cancellable = true)
    private void onGetRainGradient(float delta, CallbackInfoReturnable<Float> cir) {
       RenderTweaks tweaks = (RenderTweaks)ModuleManager.getInstance().getModule("Render Tweaks");
       if (tweaks != null && tweaks.isEnabled() && tweaks.tweaks.isSelected("Погода")) {
@@ -35,7 +28,7 @@ public class WorldMixin {
       }
    }
 
-   @Inject(method = "getThunderGradient", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "getThunderGradient", at = @At("HEAD"), cancellable = true)
    private void onGetThunderGradient(float delta, CallbackInfoReturnable<Float> cir) {
       RenderTweaks tweaks = (RenderTweaks)ModuleManager.getInstance().getModule("Render Tweaks");
       if (tweaks != null && tweaks.isEnabled() && tweaks.tweaks.isSelected("Погода")) {

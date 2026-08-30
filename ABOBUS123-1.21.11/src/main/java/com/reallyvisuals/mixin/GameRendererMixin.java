@@ -35,7 +35,7 @@ public class GameRendererMixin {
       return new Matrix4f().perspective((float) Math.toRadians(fov), aspectRatio, cameraDepth, viewDistance);
    }
 
-   @Inject(method = "getFov", at = @At("RETURN"), cancellable = true, require = 0)
+   @Inject(method = "getFov", at = @At("RETURN"), cancellable = true)
    private void onGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
       Zoom zoom = (Zoom)ModuleManager.getInstance().getModule("Zoom");
       if (zoom != null && zoom.isZooming()) {
@@ -51,15 +51,15 @@ public class GameRendererMixin {
       }
    }
 
-   @Inject(method = "bobViewWhenHurt", at = @At("HEAD"), cancellable = true, require = 0)
-   private void onBobViewWhenHurt(net.minecraft.client.util.math.MatrixStack matrices, float tickDelta, CallbackInfo ci) {
+   @Inject(method = "tiltViewWhenHurt", at = @At("HEAD"), cancellable = true)
+   private void onTiltViewWhenHurt(net.minecraft.client.util.math.MatrixStack matrices, float tickDelta, CallbackInfo ci) {
       RenderTweaks tweaks = (RenderTweaks)ModuleManager.getInstance().getModule("Render Tweaks");
       if (tweaks != null && tweaks.isEnabled() && tweaks.tweaks.isSelected("Тряска урона")) {
          ci.cancel();
       }
    }
 
-   @Inject(method = "showFloatingItem", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "showFloatingItem", at = @At("HEAD"), cancellable = true)
    private void onShowFloatingItem(ItemStack floatingItem, CallbackInfo ci) {
       RenderTweaks tweaks = (RenderTweaks)ModuleManager.getInstance().getModule("Render Tweaks");
       if (tweaks != null && tweaks.isEnabled() && tweaks.tweaks.isSelected("Анимация тотема") && floatingItem.getItem() == Items.TOTEM_OF_UNDYING) {

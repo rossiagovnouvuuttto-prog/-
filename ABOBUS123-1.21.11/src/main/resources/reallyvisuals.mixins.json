@@ -27,7 +27,6 @@
     "HandledScreenMixin",
     "EntityMixin",
     "MouseMixin",
-    "ScreenMixin",
     "TextRendererMixin",
     "TextFieldWidgetMixin",
     "ClientPlayerEntityMixin",
