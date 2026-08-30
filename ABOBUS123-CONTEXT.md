@@ -212,6 +212,44 @@ Expected (Lnet/minecraft/class_9779;Z...)V but found (FJZ...)V
 `Camera` и `WorldRenderer` нашлись не по крашу, а задачей `auditSigs`,
 написанной после второго лога.
 
+## Третий лог (20:29) — краш в оверлеях
+
+```
+Invalid descriptor on InGameOverlayRendererMixin->@Inject::abobus123$onRenderFireOverlay
+Expected (Lnet/minecraft/class_4587;Lnet/minecraft/class_4597;Lnet/minecraft/class_1058;...)V
+found    (Lnet/minecraft/class_310;Lnet/minecraft/class_4587;...)V
+```
+
+Оба обработчика брали `(MinecraftClient, MatrixStack)`. В 1.21.11 сюда
+приходят спрайт и `VertexConsumerProvider`, причём **порядок у двух
+методов разный**:
+
+```
+renderFireOverlay  (MatrixStack, VertexConsumerProvider, Sprite)
+renderInWallOverlay(Sprite, MatrixStack, VertexConsumerProvider)
+```
+
+Вернулись твик «Оверлей огня» и модуль No Fluid.
+
+### Дыра в самом auditSigs
+
+Этот краш `auditSigs` обязан был поймать — и отчитался нулём.
+Его regex обработчика не учитывал модификаторы, поэтому
+`private static void foo(` не совпадал, и обе инъекции **пропускались
+молча**. Проверка, которая тихо ничего не проверяет, хуже отсутствующей.
+
+Исправлено: модификаторы разбираются, неразобранный обработчик теперь
+считается ошибкой и печатается, а при несовпадении выводятся **полные**
+имена типов — чтобы пакет для замены брался из jar'а, а не по памяти.
+
+Остальные предупреждения третьего лога к моду не относятся: Sodium/Iris,
+отсутствие udev и `/proc/stat` на Android, офлайн-авторизация 401,
+проверка Patreon у Xaero.
+
+`@ModifyVariable` в `TextRendererMixin` под `auditSigs` не попадает
+(другие правила сигнатур) — проверен вручную, дескрипторы `draw(...)`
+совпадают.
+
 ## Состояние аудитов
 
 ```
