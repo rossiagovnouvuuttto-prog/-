@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(FogRenderer.class)
 public class BackgroundRendererMixin {
 
-   @Inject(method = "getFogColor", at = @At("RETURN"), cancellable = true, require = 0)
+   @Inject(method = "getFogColor", at = @At("RETURN"), cancellable = true)
    private void onGetFogColor(Camera camera, float tickDelta, ClientWorld world, int viewDistance,
                               float skyDarkness, CallbackInfoReturnable<Vector4f> cir) {
       CustomWorld customWorld = (CustomWorld) ModuleManager.getInstance().getModule("Custom World");

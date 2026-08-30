@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Entity.class)
 public abstract class EntityMixin {
-   @Inject(method = "changeLookDirection", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "changeLookDirection", at = @At("HEAD"), cancellable = true)
    private void abobus123$changeLookDirection(double cursorDeltaX, double cursorDeltaY, CallbackInfo ci) {
       if (FreeLook.active && (Object) this instanceof ClientPlayerEntity) {
          MinecraftClient mc = MinecraftClient.getInstance();
@@ -30,7 +30,7 @@ public abstract class EntityMixin {
       }
    }
 
-   @Inject(method = "isGlowing", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "isGlowing", at = @At("HEAD"), cancellable = true)
    private void abobus123$onIsGlowing(CallbackInfoReturnable<Boolean> cir) {
       if (!((Object) this instanceof PlayerEntity)) return;
       PlayerEntity player = (PlayerEntity)(Object)this;

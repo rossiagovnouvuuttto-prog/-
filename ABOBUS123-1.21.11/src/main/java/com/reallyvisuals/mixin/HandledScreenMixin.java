@@ -52,8 +52,7 @@ public abstract class HandledScreenMixin {
    @Inject(
       method = "onMouseClick(Lnet/minecraft/screen/slot/Slot;IILnet/minecraft/screen/slot/SlotActionType;)V",
       at = @At("HEAD"),
-      cancellable = true,
-      require = 0
+      cancellable = true
    )
    private void onSlotClick(Slot slot, int slotId, int button, SlotActionType actionType, CallbackInfo ci) {
       LockSlot lockSlot = (LockSlot)ModuleManager.getInstance().getModule("Lock Slot");

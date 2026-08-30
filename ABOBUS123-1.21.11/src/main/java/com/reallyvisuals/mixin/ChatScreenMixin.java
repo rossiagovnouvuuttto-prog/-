@@ -57,7 +57,7 @@ public abstract class ChatScreenMixin extends Screen {
       HudEditor.render(context, mouseX, mouseY);
    }
 
-   @Inject(method = "removed", at = @At("TAIL"), require = 0)
+   @Inject(method = "removed", at = @At("TAIL"))
    private void onRemoved(CallbackInfo ci) {
       HudEditor.close();
    }

@@ -33,7 +33,7 @@ public class PlayerListHudMixin {
    }
 
 
-   @Inject(method = "getPlayerName", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "getPlayerName", at = @At("HEAD"), cancellable = true)
    private void abobus123$friendName(PlayerListEntry entry, CallbackInfoReturnable<Text> cir) {
       FriendSystem fs = (FriendSystem)ModuleManager.getInstance().getModule("Настройки друзей");
       if (entry != null && entry.getProfile() != null && fs != null && fs.isEnabled() && fs.tabHighlight.value && FriendManager.isFriend(entry.getProfile().name())) {

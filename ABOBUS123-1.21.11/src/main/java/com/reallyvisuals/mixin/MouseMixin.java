@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Mouse.class)
 public class MouseMixin {
-   @Inject(method = "onMouseScroll", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "onMouseScroll", at = @At("HEAD"), cancellable = true)
    private void onMouseScroll(long window, double horizontal, double vertical, CallbackInfo ci) {
       MinecraftClient mc = MinecraftClient.getInstance();
       if (mc.currentScreen instanceof ChatScreen) {
@@ -35,7 +35,7 @@ public class MouseMixin {
       }
    }
 
-   @Inject(method = "onMouseButton", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "onMouseButton", at = @At("HEAD"), cancellable = true)
    private void onMouseButton(long window, net.minecraft.client.input.MouseInput input, int action, CallbackInfo ci) {
       int button = input.button();
       int mods = input.modifiers();
@@ -71,7 +71,7 @@ public class MouseMixin {
       }
    }
 
-   @Inject(method = "onCursorPos", at = @At("TAIL"), require = 0)
+   @Inject(method = "onCursorPos", at = @At("TAIL"))
    private void onCursorPos(long window, double x, double y, CallbackInfo ci) {
       MinecraftClient mc = MinecraftClient.getInstance();
       if (mc.currentScreen instanceof ChatScreen && HudEditor.isDragging()) {

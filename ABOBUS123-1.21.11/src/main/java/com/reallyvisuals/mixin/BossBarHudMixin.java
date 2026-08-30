@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(BossBarHud.class)
 public class BossBarHudMixin {
-   @Inject(method = "render", at = @At("HEAD"), cancellable = true, require = 0)
+   @Inject(method = "render", at = @At("HEAD"), cancellable = true)
    private void onRenderBossBar(DrawContext context, CallbackInfo ci) {
       RenderTweaks tweaks = (RenderTweaks)ModuleManager.getInstance().getModule("Render Tweaks");
       if (tweaks != null && tweaks.isEnabled() && tweaks.tweaks.isSelected("Боссбар")) {
@@ -28,7 +28,7 @@ public class BossBarHudMixin {
       }
    }
 
-   @Inject(method = "render", at = @At("RETURN"), require = 0)
+   @Inject(method = "render", at = @At("RETURN"))
    private void onRenderBossBarEnd(DrawContext context, CallbackInfo ci) {
       float dx = HUDManager.bossbar.x - HUDManager.bossbar.defaultX;
       float dy = HUDManager.bossbar.y - HUDManager.bossbar.defaultY;
