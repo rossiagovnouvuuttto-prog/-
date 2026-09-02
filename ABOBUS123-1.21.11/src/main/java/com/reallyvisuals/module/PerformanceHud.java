@@ -50,14 +50,6 @@ public class PerformanceHud extends Module {
    }
 
    private static int readFps() {
-      try {
-         String debug = String.valueOf(MinecraftClient.getInstance().getCurrentFps());
-         if (debug != null) {
-            int space = debug.indexOf(' ');
-            return Integer.parseInt((space > 0 ? debug.substring(0, space) : debug).trim());
-         }
-      } catch (Throwable ignored) {
-      }
-      return 60;
+      return Math.max(0, MinecraftClient.getInstance().getCurrentFps());
    }
 }

@@ -154,16 +154,6 @@ public class PerformanceBoost extends Module {
    }
 
    private static int readFps() {
-      try {
-         MinecraftClient mc = MinecraftClient.getInstance();
-         String debug = String.valueOf(mc.getCurrentFps());
-         if (debug != null) {
-            int space = debug.indexOf(' ');
-            String value = space > 0 ? debug.substring(0, space) : debug;
-            return Integer.parseInt(value.trim());
-         }
-      } catch (Throwable ignored) {
-      }
-      return 60;
+      return Math.max(0, MinecraftClient.getInstance().getCurrentFps());
    }
 }

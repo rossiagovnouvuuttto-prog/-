@@ -65,15 +65,12 @@ public class Watermark extends Module {
       }
    }
 
+   /**
+    * 1.18.2 exposed fpsDebugString ("60 fps T: ..."), so this used to split on a
+    * space. getCurrentFps() returns an int, the split never matched and the
+    * watermark reported a hardcoded 60 forever.
+    */
    private int getFps(MinecraftClient mc) {
-      try {
-         String debug = String.valueOf(mc.getCurrentFps());
-         if (debug != null && debug.contains(" ")) {
-            return Integer.parseInt(debug.split(" ")[0]);
-         }
-      } catch (Exception var3) {
-      }
-
-      return 60;
+      return Math.max(0, mc.getCurrentFps());
    }
 }
