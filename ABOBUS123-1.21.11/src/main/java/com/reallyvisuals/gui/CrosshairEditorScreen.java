@@ -37,7 +37,11 @@ public class CrosshairEditorScreen extends Screen {
    }
 
    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-      this.renderBackground(context, mouseX, mouseY, delta);
+      // 1.21.11 allows exactly one blur per frame and vanilla already spends it
+      // before render() is called; renderBackground() would blur a second time and
+      // throw "Can only blur once per frame". renderInGameBackground is the
+      // darkening half without the blur.
+      this.renderInGameBackground(context);
       context.getMatrices().pushMatrix();
       context.getMatrices().translate((float) (0.0F), (float) (this.openYAnim.getValue()));
       CustomFont mainFont = FontManager.getMainFont();
