@@ -378,18 +378,18 @@ public class ReallyVisualsScreen extends Screen {
          RenderUtils.drawRect(context, areaLeft, this.guiTop + 45, contentWidth, 1.0F, -14079697);
          int viewportH = 219;
          int startY = this.guiTop + 60;
-         double scale = MinecraftClient.getInstance().getWindow().getScaleFactor();
          float pivotX = this.guiLeft + 242.0F;
          float pivotY = this.guiTop + 140.0F;
          float sx1 = pivotX + (areaLeft + 1 - pivotX) * renderScale;
          float sx2 = pivotX + (areaLeft + contentWidth - 1 - pivotX) * renderScale;
          float sy1 = pivotY + (this.guiTop + 55.0F - pivotY) * renderScale;
          float sy2 = pivotY + (this.guiTop + 278.0F - pivotY) * renderScale;
-         int scissorX = (int)(sx1 * scale);
-         int scissorY = (int)(MinecraftClient.getInstance().getWindow().getHeight() - sy2 * scale);
-         int scissorW = (int)((sx2 - sx1) * scale);
-         int scissorH = (int)((sy2 - sy1) * scale);
-         context.enableScissor(scissorX, scissorY, scissorW, scissorH);
+         // DrawContext.enableScissor(int x1, int y1, int x2, int y2) takes GUI-space
+         // left/top/right/bottom and applies the scale factor and Y flip itself.
+         // This used to pass framebuffer pixels as x/y/width/height with a manual
+         // flip -- 1.18.2 style -- which clipped away the left column of module
+         // cards and most of the Markers/Configs/Friends panels.
+         context.enableScissor((int) sx1, (int) sy1, (int) sx2, (int) sy2);
          float currentScrollY = this.scrollAnimation.getValue();
          if (this.showingClientSettings) {
             this.maxScroll = 120.0F;
