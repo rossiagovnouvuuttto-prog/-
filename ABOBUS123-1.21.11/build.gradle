@@ -228,7 +228,12 @@ tasks.register('dump') {
             println "\n===== ${c.name}"
             c.declaredMethods.sort { it.name }.each { mm ->
                 if (filter && !mm.name.toLowerCase().contains(filter)) return
-                println "  ${mm.returnType.simpleName} ${mm.name}(${mm.parameterTypes.collect { it.simpleName }.join(', ')})"
+                // yarn keeps MethodParameters, so real argument names come through
+                // when present -- that is what tells x/y/w/h apart from x1/y1/x2/y2
+                def args = mm.parameters.collect { pp ->
+                    pp.isNamePresent() ? "${pp.type.simpleName} ${pp.name}" : pp.type.simpleName
+                }
+                println "  ${mm.returnType.simpleName} ${mm.name}(${args.join(', ')})"
             }
             c.declaredFields.sort { it.name }.each { fl ->
                 if (filter && !fl.name.toLowerCase().contains(filter)) return
