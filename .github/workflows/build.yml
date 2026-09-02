@@ -8,6 +8,9 @@ defaults:
   run:
     working-directory: ABOBUS123-1.21.11
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -35,3 +38,20 @@ jobs:
         with:
           name: abobus123-jar
           path: ABOBUS123-1.21.11/build/libs/*.jar
+
+      # Actions artifacts are only downloadable while signed in to GitHub.
+      # The repo is public, so publish the jar as a release asset too --
+      # that URL works in any browser, curl included.
+      - name: Publish jar to the 'latest' release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: ABOBUS123 latest build
+          body: |
+            Автосборка из ветки `claude/abobus123-fabric-mixins-jnaw2e`.
+            Коммит: ${{ github.sha }}
+
+            Требуется Fabric Loader 0.18+ и Fabric API 0.141.6+1.21.11 для Minecraft 1.21.11.
+          files: ABOBUS123-1.21.11/build/libs/*.jar
+          fail_on_unmatched_files: true
