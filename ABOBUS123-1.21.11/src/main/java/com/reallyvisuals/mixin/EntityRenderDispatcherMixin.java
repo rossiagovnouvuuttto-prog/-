@@ -2,11 +2,9 @@ package com.reallyvisuals.mixin;
 
 import com.reallyvisuals.module.HideACBot;
 import com.reallyvisuals.module.PerformanceBoost;
-import com.reallyvisuals.utils.RenderCullingHelper;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.entity.EntityRenderManager;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
@@ -14,44 +12,36 @@ import net.minecraft.entity.decoration.ItemFrameEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * 1.21.11: render() only ever sees an EntityRenderState, so the old injection
+ * could not reach the entity and was dropped from every mixin config -- which
+ * silently killed Hide AC Bot and FPS Boost's entity culling. shouldRender still
+ * takes the Entity and decides whether it is drawn at all, which is a better fit
+ * than cancelling render() ever was.
+ */
 @Mixin(EntityRenderManager.class)
 public abstract class EntityRenderDispatcherMixin {
-   @Inject(method = "render", at = @At("HEAD"), cancellable = true)
-   private void onRenderEntityHead(
-      Entity entity,
-      double x,
-      double y,
-      double z,
-      float yaw,
-      float tickDelta,
-      MatrixStack matrices,
-      VertexConsumerProvider vertexConsumers,
-      int light,
-      CallbackInfo ci
+
+   @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true)
+   private void abobus123$hideEntity(
+      Entity entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> cir
    ) {
       if (HideACBot.shouldHideEntity(entity)) {
-         ci.cancel();
-      } else {
-         MinecraftClient mc = MinecraftClient.getInstance();
-         if (mc.player != null && entity != mc.player && entity != mc.getCameraEntity()) {
-            if (RenderCullingHelper.activeFrustum != null) {
-               try {
-                  if (!RenderCullingHelper.activeFrustum.isVisible(entity.getBoundingBox().expand(0.5))) {
-                     ci.cancel();
-                     return;
-                  }
-               } catch (Throwable var18) {
-               }
-            }
+         cir.setReturnValue(false);
+         return;
+      }
 
-            if ((entity instanceof ItemEntity || entity instanceof ArmorStandEntity || entity instanceof ItemFrameEntity)
-               && mc.player.squaredDistanceTo(entity) > PerformanceBoost.smallEntityCullDistanceSquared()) {
-               ci.cancel();
-               return;
-            }
-         }
+      MinecraftClient mc = MinecraftClient.getInstance();
+      if (mc.player == null || entity == mc.player || entity == mc.getCameraEntity()) {
+         return;
+      }
+
+      // vanilla already frustum-culls here, so only the distance cut is ours
+      if ((entity instanceof ItemEntity || entity instanceof ArmorStandEntity || entity instanceof ItemFrameEntity)
+         && mc.player.squaredDistanceTo(entity) > PerformanceBoost.smallEntityCullDistanceSquared()) {
+         cir.setReturnValue(false);
       }
    }
 }
