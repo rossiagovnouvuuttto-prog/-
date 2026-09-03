@@ -50,6 +50,8 @@ jobs:
             net.minecraft.client.gui.Element \
             net.minecraft.client.gui.ParentElement \
             net.minecraft.client.gui.Click \
+            net.minecraft.client.Mouse \
+            net.minecraft.client.gui.widget.ClickableWidget \
             net.minecraft.client.input.KeyInput \
             net.minecraft.client.input.CharInput \
             net.minecraft.client.MinecraftClient \
