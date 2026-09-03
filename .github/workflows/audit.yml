@@ -36,6 +36,10 @@ jobs:
         if: always()
         run: ./gradlew auditSigs --no-daemon -q
 
+      - name: auditOverrides
+        if: always()
+        run: ./gradlew auditOverrides --no-daemon -q
+
       - name: Dump signatures of the classes we inject into
         if: always()
         run: |

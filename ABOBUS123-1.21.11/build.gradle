@@ -385,3 +385,64 @@ tasks.register('auditSigs') {
         println "\n=== несовпадений сигнатур: ${problems.size()} ==="
     }
 }
+
+// A method that no longer matches the signature it meant to override becomes a
+// brand new method that Minecraft never calls -- the mod goes quiet with no
+// error anywhere. javac only catches this when @Override is present, and most
+// of this codebase predates that. Compare every mod class against its real
+// supertypes instead of trusting the annotation to be there.
+tasks.register('auditOverrides') {
+    dependsOn 'compileJava'
+    doLast {
+        def cp = sourceSets.main.compileClasspath.files + sourceSets.main.output.classesDirs.files
+        def loader = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[])
+        def M = java.lang.reflect.Modifier
+        def problems = []
+
+        sourceSets.main.output.classesDirs.each { dir ->
+            if (!dir.exists()) return
+            dir.eachFileRecurse { f ->
+                if (!f.name.endsWith('.class')) return
+                def rel = dir.toPath().relativize(f.toPath()).toString()
+                def cn = rel.substring(0, rel.length() - 6).replace(File.separator, '.')
+                if (!cn.startsWith('com.reallyvisuals')) return
+                def c
+                try { c = loader.loadClass(cn) } catch (Throwable t) { return }
+
+                def supers = [] as LinkedHashSet
+                def queue = []
+                if (c.superclass) queue << c.superclass
+                c.interfaces.each { queue << it }
+                while (!queue.isEmpty()) {
+                    def k = queue.remove(0)
+                    if (k == null || k == Object || supers.contains(k)) continue
+                    supers << k
+                    if (k.superclass) queue << k.superclass
+                    k.interfaces.each { queue << it }
+                }
+                // only classes that actually extend the game are interesting
+                if (!supers.any { it.name.startsWith('net.minecraft') }) return
+
+                c.declaredMethods.each { m ->
+                    if (m.synthetic || M.isStatic(m.modifiers) || M.isPrivate(m.modifiers)) return
+                    def sameName = []
+                    supers.each { s ->
+                        s.declaredMethods.each { sm ->
+                            if (sm.name == m.name && !sm.synthetic && !M.isStatic(sm.modifiers)) sameName << sm
+                        }
+                    }
+                    if (sameName.isEmpty()) return
+                    def mine = m.parameterTypes.toList()
+                    if (sameName.any { it.parameterTypes.toList() == mine }) return
+                    def lines = ["${cn}.${m.name}(${mine.collect { it.simpleName }.join(', ')})"]
+                    sameName.collect {
+                        "     родитель: ${it.declaringClass.simpleName}.${it.name}(${it.parameterTypes.collect { p -> p.simpleName }.join(', ')})"
+                    }.unique().each { lines << it }
+                    problems << lines.join('\n')
+                }
+            }
+        }
+        problems.each { println "\n!! " + it }
+        println "\n=== подозрительных переопределений: ${problems.size()} ==="
+    }
+}
