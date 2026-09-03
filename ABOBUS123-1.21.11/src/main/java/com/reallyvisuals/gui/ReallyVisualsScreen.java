@@ -1274,6 +1274,14 @@ public class ReallyVisualsScreen extends Screen {
 
    @Override
    public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean doubled) {
+      // 1.21.11 delivers the second tap of a double click as its own mouseClicked
+      // call with doubled = true. Nothing in this screen wants a double click and
+      // every control here toggles, so that second call just undid the first --
+      // which is what made the module switches look dead on touch input.
+      if (doubled) {
+         return true;
+      }
+
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       Module.KeySetting listeningKey = this.getListeningKeySetting();
       if (listeningKey != null) {
@@ -1883,18 +1891,6 @@ public class ReallyVisualsScreen extends Screen {
                       int tagX = switchX - tagBoxWidth - 4;
                      int starX = tagX - 11;
                      int arrowX = moduleLeft + cardWidth - 14;
-                     // TEMPORARY: the toggle does not respond on touch devices while the
-                     // bind box next to it does. Everything checkable from the mapped jar
-                     // (handler signatures, Click.button(), the card geometry) matches, so
-                     // log what actually arrives and which zone claims it.
-                     System.out.println("[ABOBUS123] click mod=" + module.getName()
-                        + " mx=" + String.format(java.util.Locale.ROOT, "%.1f", mouseX)
-                        + " btn=" + button + " doubled=" + doubled
-                        + " | bind=[" + tagX + "," + (tagX + tagBoxWidth) + "]"
-                        + " star=[" + (starX - 4) + "," + (starX + 14) + "]"
-                        + " switch=[" + switchX + "," + (switchX + 19) + "]"
-                        + " arrow=[" + (arrowX - 6) + "," + (arrowX + 10) + "]"
-                        + " drop=" + module.hasDropdown());
                      if ("Создание метки".equals(module.getName())) {
                         int createBtnX = moduleLeft + 10;
                         int createBtnY = currentY + 36;

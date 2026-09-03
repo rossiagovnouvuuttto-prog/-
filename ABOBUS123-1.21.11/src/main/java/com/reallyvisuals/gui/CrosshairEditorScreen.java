@@ -226,7 +226,15 @@ public class CrosshairEditorScreen extends Screen {
       return y + 20;
    }
 
+   @Override
    public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean doubled) {
+      // 1.21.11 delivers the second tap of a double click as its own mouseClicked
+      // call with doubled = true; these screens toggle rather than react to double
+      // clicks, so that second call would just undo the first.
+      if (doubled) {
+         return true;
+      }
+
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       float openSlide = this.openYAnim.getValue();
       if (openSlide > 0.5F) {
@@ -351,6 +359,7 @@ public class CrosshairEditorScreen extends Screen {
       return y + 20;
    }
 
+   @Override
    public boolean mouseDragged(net.minecraft.client.gui.Click click, double deltaX, double deltaY) {
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       int panelW = 240;

@@ -214,6 +214,7 @@ public class CustomHandEditorScreen extends Screen {
       return y + 20;
    }
 
+   @Override
    public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double amount) {
       if (this.animDropdownOpen) {
          this.animDropdownScroll = (float)(this.animDropdownScroll - amount);
@@ -233,7 +234,15 @@ public class CustomHandEditorScreen extends Screen {
       return super.mouseScrolled(mouseX, mouseY, horizontal, amount);
    }
 
+   @Override
    public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean doubled) {
+      // 1.21.11 delivers the second tap of a double click as its own mouseClicked
+      // call with doubled = true; these screens toggle rather than react to double
+      // clicks, so that second call would just undo the first.
+      if (doubled) {
+         return true;
+      }
+
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       float openSlide = this.openYAnim.getValue();
       if (openSlide > 0.5F) {
@@ -333,6 +342,7 @@ public class CustomHandEditorScreen extends Screen {
       return y + 20;
    }
 
+   @Override
    public boolean mouseDragged(net.minecraft.client.gui.Click click, double deltaX, double deltaY) {
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       if (this.isDraggingMain) {
@@ -356,6 +366,7 @@ public class CustomHandEditorScreen extends Screen {
       }
    }
 
+   @Override
    public boolean mouseReleased(net.minecraft.client.gui.Click click) {
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       this.isDraggingMain = false;
