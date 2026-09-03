@@ -43,6 +43,11 @@ jobs:
             net.minecraft.client.render.entity.state.PlayerEntityRenderState \
             net.minecraft.client.render.entity.state.LivingEntityRenderState \
             net.minecraft.client.render.entity.state.EntityRenderState \
+            net.minecraft.client.gui.Element \
+            net.minecraft.client.gui.ParentElement \
+            net.minecraft.client.gui.Click \
+            net.minecraft.client.input.KeyInput \
+            net.minecraft.client.input.CharInput \
             net.minecraft.client.MinecraftClient \
             net.minecraft.client.gui.DrawContext \
             net.minecraft.client.gui.hud.InGameHud \
