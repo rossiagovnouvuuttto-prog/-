@@ -199,6 +199,7 @@ public class ReallyVisualsScreen extends Screen {
       UISoundHelper.playSound("ui.gui_close");
    }
 
+   @Override
    public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double amount) {
       if (this.showingDragmode) {
          return false;
@@ -1271,6 +1272,7 @@ public class ReallyVisualsScreen extends Screen {
       subFont.drawString(context, "Dragmode", exitX + 24, exitY + 5, -1);
    }
 
+   @Override
    public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean doubled) {
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       Module.KeySetting listeningKey = this.getListeningKeySetting();
@@ -1881,6 +1883,18 @@ public class ReallyVisualsScreen extends Screen {
                       int tagX = switchX - tagBoxWidth - 4;
                      int starX = tagX - 11;
                      int arrowX = moduleLeft + cardWidth - 14;
+                     // TEMPORARY: the toggle does not respond on touch devices while the
+                     // bind box next to it does. Everything checkable from the mapped jar
+                     // (handler signatures, Click.button(), the card geometry) matches, so
+                     // log what actually arrives and which zone claims it.
+                     System.out.println("[ABOBUS123] click mod=" + module.getName()
+                        + " mx=" + String.format(java.util.Locale.ROOT, "%.1f", mouseX)
+                        + " btn=" + button + " doubled=" + doubled
+                        + " | bind=[" + tagX + "," + (tagX + tagBoxWidth) + "]"
+                        + " star=[" + (starX - 4) + "," + (starX + 14) + "]"
+                        + " switch=[" + switchX + "," + (switchX + 19) + "]"
+                        + " arrow=[" + (arrowX - 6) + "," + (arrowX + 10) + "]"
+                        + " drop=" + module.hasDropdown());
                      if ("Создание метки".equals(module.getName())) {
                         int createBtnX = moduleLeft + 10;
                         int createBtnY = currentY + 36;
@@ -2069,6 +2083,7 @@ public class ReallyVisualsScreen extends Screen {
       }
    }
 
+   @Override
    public boolean mouseDragged(net.minecraft.client.gui.Click click, double deltaX, double deltaY) {
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       if (!this.showingDragmode) {
@@ -2163,6 +2178,7 @@ public class ReallyVisualsScreen extends Screen {
       }
    }
 
+   @Override
    public boolean mouseReleased(net.minecraft.client.gui.Click click) {
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
       if (this.pickerDragging != 0) {
@@ -2219,6 +2235,7 @@ public class ReallyVisualsScreen extends Screen {
       return null;
    }
 
+   @Override
    public boolean charTyped(net.minecraft.client.input.CharInput input) {
       char chr = (char) input.codepoint(); int modifiers = input.modifiers();
       if (this.selectedCategory == Category.MARKERS && this.activeMarkerInput > 0) {
@@ -2257,6 +2274,7 @@ public class ReallyVisualsScreen extends Screen {
       }
    }
 
+   @Override
    public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
       int keyCode = input.key(); int scanCode = input.scancode(); int modifiers = input.modifiers();
       if (this.selectedCategory == Category.MARKERS && this.activeMarkerInput > 0) {
