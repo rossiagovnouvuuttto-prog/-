@@ -8,6 +8,7 @@ import com.reallyvisuals.module.RenderTweaks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffect;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,7 +23,7 @@ public abstract class LivingEntityMixin {
    @Shadow
    protected int jumpingCooldown;
 
-   @Inject(method = "jump", at = @At("HEAD"), require = 0)
+   @Inject(method = "jump", at = @At("HEAD"))
    private void abobus123$onJump(CallbackInfo ci) {
       if ((Object)this == MinecraftClient.getInstance().player) {
          JumpCircles jumpCircles = (JumpCircles)ModuleManager.getInstance().getModule("Jump Circles");
@@ -33,7 +34,7 @@ public abstract class LivingEntityMixin {
       }
    }
 
-   @Inject(method = "tickMovement", at = @At("HEAD"), require = 0)
+   @Inject(method = "tickMovement", at = @At("HEAD"))
    private void abobus123$onTickMovement(CallbackInfo ci) {
       NoJumpDelay noJumpDelay = (NoJumpDelay) ModuleManager.getInstance().getModule("No Jump Delay");
       if (noJumpDelay != null && noJumpDelay.isEnabled() && (Object)this == MinecraftClient.getInstance().player) {
@@ -41,15 +42,17 @@ public abstract class LivingEntityMixin {
       }
    }
 
-   @Inject(method = "hasStatusEffect", at = @At("HEAD"), cancellable = true, require = 0)
-   private void abobus123$onHasStatusEffect(StatusEffect effect, CallbackInfoReturnable<Boolean> cir) {
+   // 1.21.11: hasStatusEffect takes a RegistryEntry, not the effect itself
+   @Inject(method = "hasStatusEffect", at = @At("HEAD"), cancellable = true)
+   private void abobus123$onHasStatusEffect(RegistryEntry<StatusEffect> effect, CallbackInfoReturnable<Boolean> cir) {
       if (!((Object) this instanceof PlayerEntity)) return;
 
       RenderTweaks tweaks = (RenderTweaks) ModuleManager.getInstance().getModule("Render Tweaks");
       if (tweaks != null
          && tweaks.isEnabled()
          && tweaks.tweaks.isSelected("Черные сердца")
-         && effect == StatusEffects.WITHER) {
+         && effect != null
+         && effect.value() == StatusEffects.WITHER.value()) {
          cir.setReturnValue(false);
       }
    }
