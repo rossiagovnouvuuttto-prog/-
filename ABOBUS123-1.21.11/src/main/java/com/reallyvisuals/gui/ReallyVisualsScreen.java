@@ -854,7 +854,7 @@ public class ReallyVisualsScreen extends Screen {
                tagText = fitText(subFont, tagText, tagBoxWidth - 4);
                 int tagTextWidth = subFont.getStringWidth(tagText);
                 float tagBoxHeight = 12.0F;
-                int tagX = switchX - tagBoxWidth - 4;
+                int tagX = switchX - tagBoxWidth - 10;
                 float tagY = itemY + 1.0F;
                if ("Создание метки".equals(module.getName())) {
                   mainFont.drawString(context, module.getName(), moduleLeft + 10, currentY + 7, -1);
@@ -1888,7 +1888,7 @@ public class ReallyVisualsScreen extends Screen {
                       String tagText = this.bindingModule == module ? "..." : module.getTag();
                       int tagTextWidth = FontManager.getSubFont().getStringWidth(tagText);
                       int tagBoxWidth = 34;
-                      int tagX = switchX - tagBoxWidth - 4;
+                      int tagX = switchX - tagBoxWidth - 10;
                      int starX = tagX - 11;
                      int arrowX = moduleLeft + cardWidth - 14;
                      if ("Создание метки".equals(module.getName())) {
@@ -1906,20 +1906,21 @@ public class ReallyVisualsScreen extends Screen {
                         }
                      }
 
-                     if (mouseX >= tagX && mouseX <= tagX + tagBoxWidth) {
-                        this.bindingModule = this.bindingModule == module ? null : module;
-                        UISoundHelper.playSound("ui.keybind_listen");
-                        return true;
-                     }
-
-                     if (mouseX >= starX - 4 && mouseX <= starX + 14) {
+                     // The switch is only 14 units wide and the bind box used to sit 4
+                     // units from it AND get tested first, so a tap a few pixels off the
+                     // switch armed key-binding instead of toggling the module. The
+                     // switch now wins the tie and the bind box keeps its distance.
+                     if (mouseX >= switchX - 6 && mouseX <= switchX + 16 && button == 0) {
+                        module.toggle();
+                        UISoundHelper.playSound(module.isEnabled() ? "ui.toggle_on" : "ui.toggle_off");
+                     } else if (mouseX >= starX - 4 && mouseX <= starX + 14) {
                         if (button == 0) {
                            module.setFavorite(!module.isFavorite());
                            UISoundHelper.playSound(module.isFavorite() ? "ui.favorite_add" : "ui.favorite_remove");
                         }
-                     } else if (mouseX >= switchX && mouseX <= switchX + 19 && button == 0) {
-                        module.toggle();
-                        UISoundHelper.playSound(module.isEnabled() ? "ui.toggle_on" : "ui.toggle_off");
+                     } else if (mouseX >= tagX && mouseX <= tagX + tagBoxWidth && button == 0) {
+                        this.bindingModule = this.bindingModule == module ? null : module;
+                        UISoundHelper.playSound("ui.keybind_listen");
                      } else if (mouseX >= arrowX - 6 && mouseX <= arrowX + 10 && module.hasDropdown()) {
                         module.setExpanded(!module.isExpanded());
                         UISoundHelper.playSound(module.isExpanded() ? "ui.module_expand" : "ui.module_collapse");
