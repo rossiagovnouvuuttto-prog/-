@@ -3,6 +3,7 @@ package com.reallyvisuals.gui;
 import com.reallyvisuals.module.Module;
 import com.reallyvisuals.module.ModuleManager;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
@@ -46,7 +47,6 @@ public class LiveGuiScreen extends Screen {
 
    @Override
    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-      // No dark full-screen background: this is meant to feel like an overlay.
       int accent = ACCENTS[themeIndex];
       int panelHeight = headerHeight + 8 + MODULE_NAMES.length * rowHeight + 48;
 
@@ -88,7 +88,11 @@ public class LiveGuiScreen extends Screen {
    }
 
    @Override
-   public boolean mouseClicked(double mouseX, double mouseY, int button) {
+   public boolean mouseClicked(Click click, boolean doubled) {
+      double mouseX = click.x();
+      double mouseY = click.y();
+      int button = click.button();
+
       if (button == 0 && isInside(mouseX, mouseY, panelX, panelY, panelWidth, headerHeight)) {
          dragging = true;
          dragOffsetX = (int) mouseX - panelX;
@@ -118,33 +122,23 @@ public class LiveGuiScreen extends Screen {
          }
       }
 
-      return super.mouseClicked(mouseX, mouseY, button);
+      return super.mouseClicked(click, doubled);
    }
 
    @Override
-   public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-      if (dragging && button == 0) {
-         panelX = clamp((int) mouseX - dragOffsetX, 2, Math.max(2, this.width - panelWidth - 2));
-         panelY = clamp((int) mouseY - dragOffsetY, 2, Math.max(2, this.height - 64));
+   public boolean mouseDragged(Click click, double offsetX, double offsetY) {
+      if (dragging && click.button() == 0) {
+         panelX = clamp((int) click.x() - dragOffsetX, 2, Math.max(2, this.width - panelWidth - 2));
+         panelY = clamp((int) click.y() - dragOffsetY, 2, Math.max(2, this.height - 64));
          return true;
       }
-      return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+      return super.mouseDragged(click, offsetX, offsetY);
    }
 
    @Override
-   public boolean mouseReleased(double mouseX, double mouseY, int button) {
+   public boolean mouseReleased(Click click) {
       dragging = false;
-      return super.mouseReleased(mouseX, mouseY, button);
-   }
-
-   @Override
-   public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-      // Right Shift toggles the overlay; Esc also closes it through Screen.
-      if (keyCode == 344) {
-         this.close();
-         return true;
-      }
-      return super.keyPressed(keyCode, scanCode, modifiers);
+      return super.mouseReleased(click);
    }
 
    private int getActiveCount() {
