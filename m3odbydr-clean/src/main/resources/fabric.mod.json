@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "m3odbydr",
+  "version": "${version}",
+  "name": "m3odbydr!!",
+  "description": "Clean client-side Fabric mod for Minecraft 1.21.11: LiveGUI, HUD, Zoom, Freelook, Fullbright, Sprint and SuperRes Lite.",
+  "authors": ["m3odbydr!!"],
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.m3odbydr.client.M3odbydrClient"]
+  },
+  "mixins": ["m3odbydr.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.18.1",
+    "minecraft": "1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

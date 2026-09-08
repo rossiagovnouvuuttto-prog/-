@@ -1,0 +1,36 @@
+name: m3odbydr clean build
+
+on:
+  push:
+    branches:
+      - chatgpt/m3odbydr-clean
+    paths:
+      - 'm3odbydr-clean/**'
+      - '.github/workflows/m3odbydr-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: m3odbydr-clean
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.1'
+      - name: Build clean client
+        run: gradle clean build --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m3odbydr-jar
+          path: m3odbydr-clean/build/libs/m3odbydr-client-*.jar
+          if-no-files-found: error

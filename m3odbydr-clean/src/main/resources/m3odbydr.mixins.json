@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "package": "dev.m3odbydr.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "EntityMixin",
+    "CameraMixin",
+    "GameRendererMixin",
+    "LightmapTextureManagerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
