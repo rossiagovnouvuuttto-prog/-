@@ -229,6 +229,25 @@ public class ReallyVisualsScreen extends Screen {
       } else {
          float scaleVal = this.openAnim.getValue();
          float slideVal = this.openYAnim.getValue();
+
+         // Everything below is drawn in logical coordinates and then scaled by the
+         // matrix, so hover has to be tested in that same space -- exactly the way
+         // mouseClicked already un-transforms the cursor. Testing the raw cursor
+         // against logical coordinates made the highlight and the real click target
+         // drift apart as soon as uiScale left 1.0, which is why a tap that looked
+         // dead centre on a switch landed in the bind box next to it.
+         if (scaleVal < 0.999F || slideVal > 0.5F) {
+            float acx = this.width / 2.0F;
+            float acy = this.height / 2.0F;
+            double amy = mouseY - slideVal;
+            mouseX = (int) ((mouseX - acx) / scaleVal + acx);
+            mouseY = (int) ((amy - acy) / scaleVal + acy);
+         }
+         if (uiScale != 1.0F && uiScale > 0.1F) {
+            mouseX = (int) ((mouseX - (this.guiLeft + 242.0F)) / uiScale + (this.guiLeft + 242.0F));
+            mouseY = (int) ((mouseY - (this.guiTop + 140.0F)) / uiScale + (this.guiTop + 140.0F));
+         }
+
          context.getMatrices().pushMatrix();
          context.getMatrices().translate((float) (0.0F), (float) (slideVal));
          context.getMatrices().pushMatrix();
@@ -1283,6 +1302,14 @@ public class ReallyVisualsScreen extends Screen {
       }
 
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
+      // TEMPORARY: the switch still refuses taps that look dead centre on it. The
+      // coordinate maths checks out on paper, so log the raw cursor alongside the
+      // scale factors to find where the two actually part company.
+      System.out.println("[ABOBUS123] raw=" + String.format(java.util.Locale.ROOT, "%.1f,%.1f", click.x(), click.y())
+         + " uiScale=" + uiScale + " open=" + this.openAnim.getValue()
+         + " gui=" + this.width + "x" + this.height
+         + " guiLeft=" + this.guiLeft + " guiTop=" + this.guiTop
+         + " winScale=" + net.minecraft.client.MinecraftClient.getInstance().getWindow().getScaleFactor());
       Module.KeySetting listeningKey = this.getListeningKeySetting();
       if (listeningKey != null) {
          listeningKey.setKey(KeyUtils.toMouseBind(button));
@@ -1891,6 +1918,12 @@ public class ReallyVisualsScreen extends Screen {
                       int tagX = switchX - tagBoxWidth - 10;
                      int starX = tagX - 11;
                      int arrowX = moduleLeft + cardWidth - 14;
+                     System.out.println("[ABOBUS123]   card=" + module.getName()
+                        + " mx=" + String.format(java.util.Locale.ROOT, "%.1f", mouseX)
+                        + " switch=[" + (switchX - 6) + "," + (switchX + 16) + "]"
+                        + " bind=[" + tagX + "," + (tagX + tagBoxWidth) + "]"
+                        + " star=[" + (starX - 4) + "," + (starX + 14) + "]"
+                        + " arrow=[" + (arrowX - 6) + "," + (arrowX + 10) + "]");
                      if ("Создание метки".equals(module.getName())) {
                         int createBtnX = moduleLeft + 10;
                         int createBtnY = currentY + 36;
