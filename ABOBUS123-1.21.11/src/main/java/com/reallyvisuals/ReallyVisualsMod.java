@@ -1,6 +1,7 @@
 package com.reallyvisuals;
 
 import com.reallyvisuals.config.ConfigManager;
+import com.reallyvisuals.gui.LiveGuiScreen;
 import com.reallyvisuals.gui.ReallyVisualsScreen;
 import com.reallyvisuals.module.Module;
 import com.reallyvisuals.module.ModuleManager;
@@ -45,7 +46,7 @@ public class ReallyVisualsMod implements ClientModInitializer {
          if (isDefaultKey) {
             while (openGuiKey.wasPressed()) {
                if (client.currentScreen == null) {
-                  client.setScreen(new ReallyVisualsScreen());
+                  client.setScreen(new LiveGuiScreen());
                }
             }
          } else {
