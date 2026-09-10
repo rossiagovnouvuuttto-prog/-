@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Claude AI для Foxford</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="fxc-page fxc-page--popup">
+  <header class="fxc-head">
+    <span class="fxc-logo">✦</span>
+    <h1>Claude AI для Foxford</h1>
+  </header>
+
+  <p id="status" class="fxc-status">Проверяю настройки…</p>
+
+  <div class="fxc-row">
+    <label for="theme">Тема оформления</label>
+    <select id="theme">
+      <option value="auto">Как в системе</option>
+      <option value="light">Светлая</option>
+      <option value="dark">Тёмная</option>
+    </select>
+  </div>
+
+  <button id="analyze" class="fxc-primary" type="button">Разобрать задание</button>
+  <button id="options" class="fxc-secondary" type="button">Настройки и API-ключ</button>
+
+  <p class="fxc-hint">Расширение работает только на foxford.ru и никогда не отправляет задание автоматически.</p>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Claude AI для Foxford",
+  "version": "1.0.0",
+  "default_locale": "ru",
+  "description": "Помощник на базе Claude: анализирует задание на foxford.ru и подсказывает ответ с объяснением.",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://foxford.ru/*",
+    "https://*.foxford.ru/*",
+    "https://api.anthropic.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://foxford.ru/*", "https://*.foxford.ru/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Claude AI для Foxford",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

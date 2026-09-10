@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Настройки · Claude AI для Foxford</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="fxc-page fxc-page--options">
+  <header class="fxc-head">
+    <span class="fxc-logo">✦</span>
+    <h1>Настройки Claude AI для Foxford</h1>
+  </header>
+
+  <section class="fxc-card">
+    <h2>API-ключ Claude</h2>
+    <p class="fxc-hint">
+      Ключ создаётся в консоли Anthropic (console.anthropic.com → API Keys) и хранится
+      только в локальном хранилище браузера. В коде расширения ключа нет.
+    </p>
+    <div class="fxc-row">
+      <label for="apiKey">Ключ (sk-ant-…)</label>
+      <div class="fxc-inline">
+        <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-...">
+        <button id="toggleKey" class="fxc-secondary" type="button">Показать</button>
+      </div>
+    </div>
+    <div class="fxc-actions">
+      <button id="save" class="fxc-primary" type="button">Сохранить</button>
+      <button id="test" class="fxc-secondary" type="button">Проверить ключ</button>
+      <button id="clear" class="fxc-danger" type="button">Удалить ключ</button>
+    </div>
+    <p id="status" class="fxc-status"></p>
+  </section>
+
+  <section class="fxc-card">
+    <h2>Модель и ответ</h2>
+    <div class="fxc-row">
+      <label for="model">Модель</label>
+      <select id="model">
+        <option value="claude-opus-5">Claude Opus 5 — максимальное качество</option>
+        <option value="claude-sonnet-5">Claude Sonnet 5 — баланс (рекомендуется)</option>
+        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 — быстрее и дешевле</option>
+      </select>
+    </div>
+    <div class="fxc-row">
+      <label for="maxTokens">Максимум токенов в ответе</label>
+      <input id="maxTokens" type="number" min="256" max="8000" step="64">
+    </div>
+    <div class="fxc-row">
+      <label for="theme">Тема оформления</label>
+      <select id="theme">
+        <option value="auto">Как в системе</option>
+        <option value="light">Светлая</option>
+        <option value="dark">Тёмная</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="fxc-card">
+    <h2>Как это работает</h2>
+    <ul class="fxc-list">
+      <li>Расширение активно только на страницах foxford.ru.</li>
+      <li>Текст задания и (по желанию) снимок видимой области отправляются в Claude API напрямую с вашего компьютера.</li>
+      <li>Расширение никогда не нажимает кнопку отправки или сдачи задания.</li>
+      <li>Ответ ИИ может быть неверным — проверяйте его самостоятельно.</li>
+    </ul>
+  </section>
+
+  <script src="options.js"></script>
+</body>
+</html>
