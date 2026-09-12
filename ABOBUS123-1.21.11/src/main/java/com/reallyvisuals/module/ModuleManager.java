@@ -1,12 +1,23 @@
 package com.reallyvisuals.module;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class ModuleManager {
    private static ModuleManager instance;
    private final List<Module> modules = new ArrayList<>();
+   /**
+    * getModule runs on every frame from the HUD, the world pass and -- since
+    * entity culling came back -- twice for every entity in view. A stream scan
+    * over ~76 modules allocated a Stream, a lambda and an Optional each time,
+    * which on a phone is thousands of short-lived objects a second. Look-ups go
+    * through this map instead; the list still owns ordering and iteration.
+    */
+   private final Map<String, Module> byName = new HashMap<>();
 
    public ModuleManager() {
       this.modules.add(new PerformanceBoost());
@@ -90,7 +101,16 @@ public class ModuleManager {
    }
 
    public Module getModule(String name) {
-      return this.modules.stream().filter(m -> m.getName().equalsIgnoreCase(name)).findFirst().orElse(null);
+      if (name == null) {
+         return null;
+      }
+      if (this.byName.size() != this.modules.size()) {
+         this.byName.clear();
+         for (Module m : this.modules) {
+            this.byName.put(m.getName().toLowerCase(Locale.ROOT), m);
+         }
+      }
+      return this.byName.get(name.toLowerCase(Locale.ROOT));
    }
 
    public List<Module> getModules() {

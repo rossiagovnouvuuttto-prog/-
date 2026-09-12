@@ -28,6 +28,12 @@ public abstract class EntityRenderDispatcherMixin {
    private void abobus123$hideEntity(
       Entity entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> cir
    ) {
+      // runs for every entity in view, every frame -- bail before touching
+      // anything else when there is nothing to do
+      if (entity == null) {
+         return;
+      }
+
       if (HideACBot.shouldHideEntity(entity)) {
          cir.setReturnValue(false);
          return;

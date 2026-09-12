@@ -1302,14 +1302,6 @@ public class ReallyVisualsScreen extends Screen {
       }
 
       double mouseX = click.x(); double mouseY = click.y(); int button = click.button();
-      // TEMPORARY: the switch still refuses taps that look dead centre on it. The
-      // coordinate maths checks out on paper, so log the raw cursor alongside the
-      // scale factors to find where the two actually part company.
-      System.out.println("[ABOBUS123] raw=" + String.format(java.util.Locale.ROOT, "%.1f,%.1f", click.x(), click.y())
-         + " uiScale=" + uiScale + " open=" + this.openAnim.getValue()
-         + " gui=" + this.width + "x" + this.height
-         + " guiLeft=" + this.guiLeft + " guiTop=" + this.guiTop
-         + " winScale=" + net.minecraft.client.MinecraftClient.getInstance().getWindow().getScaleFactor());
       Module.KeySetting listeningKey = this.getListeningKeySetting();
       if (listeningKey != null) {
          listeningKey.setKey(KeyUtils.toMouseBind(button));
@@ -1918,12 +1910,6 @@ public class ReallyVisualsScreen extends Screen {
                       int tagX = switchX - tagBoxWidth - 10;
                      int starX = tagX - 11;
                      int arrowX = moduleLeft + cardWidth - 14;
-                     System.out.println("[ABOBUS123]   card=" + module.getName()
-                        + " mx=" + String.format(java.util.Locale.ROOT, "%.1f", mouseX)
-                        + " switch=[" + (switchX - 6) + "," + (switchX + 16) + "]"
-                        + " bind=[" + tagX + "," + (tagX + tagBoxWidth) + "]"
-                        + " star=[" + (starX - 4) + "," + (starX + 14) + "]"
-                        + " arrow=[" + (arrowX - 6) + "," + (arrowX + 10) + "]");
                      if ("Создание метки".equals(module.getName())) {
                         int createBtnX = moduleLeft + 10;
                         int createBtnY = currentY + 36;
