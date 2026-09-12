@@ -23,8 +23,9 @@ import org.joml.Matrix4f;
  * Every method therefore takes a VertexConsumerProvider. Callers get one from the Fabric
  * world render events (WorldRenderContext.consumers()), reintroduced in 1.21.10.
  *
- * Note on line layers: RenderLayers.LINES uses POSITION_COLOR_NORMAL and will render
- * nothing if the normal is omitted, so line() computes the segment direction per vertex.
+ * Note on line layers: RenderLayers.LINES uses POSITION_COLOR_NORMAL_LINE_WIDTH. Both the
+ * segment normal AND a per-vertex line width are mandatory -- omitting the width throws
+ * "Missing elements in vertex: LineWidth" the moment a line is queued.
  */
 public class RenderUtils3D {
 
@@ -42,7 +43,10 @@ public class RenderUtils3D {
       return (color & 0xFF) / 255.0F;
    }
 
-   /** One line segment on RenderLayers.LINES; normals are mandatory on that layer. */
+   /** Vanilla draws debug lines at width 1; the layer demands it on every vertex. */
+   private static final float LINE_WIDTH = 1.0F;
+
+   /** One line segment on RenderLayers.LINES; normal and width are both mandatory. */
    private static void line(MatrixStack matrices, VertexConsumer vc,
                             float x1, float y1, float z1, float x2, float y2, float z2,
                             float r, float g, float b, float a) {
@@ -55,8 +59,8 @@ public class RenderUtils3D {
       dx /= len;
       dy /= len;
       dz /= len;
-      vc.vertex(entry, x1, y1, z1).color(r, g, b, a).normal(entry, dx, dy, dz);
-      vc.vertex(entry, x2, y2, z2).color(r, g, b, a).normal(entry, dx, dy, dz);
+      vc.vertex(entry, x1, y1, z1).color(r, g, b, a).normal(entry, dx, dy, dz).lineWidth(LINE_WIDTH);
+      vc.vertex(entry, x2, y2, z2).color(r, g, b, a).normal(entry, dx, dy, dz).lineWidth(LINE_WIDTH);
    }
 
    // ---------------------------------------------------------------- boxes

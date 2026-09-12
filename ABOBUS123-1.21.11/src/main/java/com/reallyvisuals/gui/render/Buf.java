@@ -90,8 +90,10 @@ public final class Buf {
             float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (len < 1.0E-5F) continue;
             dx /= len; dy /= len; dz /= len;
-            vc.vertex(p[0], p[1], p[2]).color(p[3], p[4], p[5], p[6]).normal(e, dx, dy, dz);
-            vc.vertex(q[0], q[1], q[2]).color(q[3], q[4], q[5], q[6]).normal(e, dx, dy, dz);
+            // RenderLayers.LINES is POSITION_COLOR_NORMAL_LINE_WIDTH: leaving the width
+            // out throws "Missing elements in vertex: LineWidth" as soon as a line is queued
+            vc.vertex(p[0], p[1], p[2]).color(p[3], p[4], p[5], p[6]).normal(e, dx, dy, dz).lineWidth(1.0F);
+            vc.vertex(q[0], q[1], q[2]).color(q[3], q[4], q[5], q[6]).normal(e, dx, dy, dz).lineWidth(1.0F);
          }
       } else if (texture != null) {
          VertexConsumer vc = provider.getBuffer(RenderLayers.text(texture));
