@@ -49,6 +49,9 @@ jobs:
             net.minecraft.client.render.entity.state.EntityRenderState \
             net.minecraft.client.gui.Element \
             net.minecraft.client.gui.ParentElement \
+            net.minecraft.client.render.VertexConsumer \
+            net.minecraft.client.render.VertexFormats \
+            net.minecraft.client.render.RenderLayer \
             net.minecraft.client.gui.Click \
             net.minecraft.client.render.entity.EntityRenderManager \
             net.minecraft.client.render.entity.EntityRenderer \
