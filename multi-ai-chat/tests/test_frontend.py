@@ -5,12 +5,13 @@ Exercises the real UI against the running app + mock Hugging Face router.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 
 from playwright.sync_api import expect, sync_playwright
 
-APP = "http://127.0.0.1:8800"
+APP = os.environ.get("APP_URL", "http://127.0.0.1:8800")
 SHOTS = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/shots")
 SHOTS.mkdir(parents=True, exist_ok=True)
 

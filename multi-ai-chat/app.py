@@ -379,7 +379,7 @@ async def probe_model(client: httpx.AsyncClient, model_id: str) -> bool:
 
 async def resolve_featured(force: bool = False) -> list[dict[str, Any]]:
     cfg = load_models().get("featured") or []
-    now = asyncio.get_event_loop().time()
+    now = asyncio.get_running_loop().time()
 
     cached = _featured_cache["data"]
     if cached is not None and not force and now - _featured_cache["at"] < FEATURED_TTL:

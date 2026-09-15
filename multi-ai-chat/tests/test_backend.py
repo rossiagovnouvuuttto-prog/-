@@ -9,10 +9,11 @@ Run:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.request
 
-APP = "http://127.0.0.1:8800"
+APP = os.environ.get("APP_URL", "http://127.0.0.1:8800")
 failures: list[str] = []
 
 
