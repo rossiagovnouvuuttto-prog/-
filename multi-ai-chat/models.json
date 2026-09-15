@@ -1,0 +1,77 @@
+{
+  "_comment": "Add a new model by dropping an entry into the right category. Only `id` (the Hugging Face Model ID) is required; `name` and `desc` are cosmetic. Restart the app (or redeploy the Space) to pick up changes. Users can also add any Model ID at runtime from the model picker.",
+  "default": "deepseek-ai/DeepSeek-V3-0324",
+  "categories": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "icon": "🐋",
+      "models": [
+        { "id": "deepseek-ai/DeepSeek-V3-0324", "name": "DeepSeek V3 0324", "desc": "Флагман MoE, сильный в коде и рассуждениях" },
+        { "id": "deepseek-ai/DeepSeek-V3.1", "name": "DeepSeek V3.1", "desc": "Обновлённый V3 с гибридным режимом" },
+        { "id": "deepseek-ai/DeepSeek-R1", "name": "DeepSeek R1", "desc": "Цепочки рассуждений, математика и логика" },
+        { "id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", "name": "DeepSeek R1 Distill 32B", "desc": "Лёгкая дистилляция R1" }
+      ]
+    },
+    {
+      "id": "qwen",
+      "name": "Qwen",
+      "icon": "🌐",
+      "models": [
+        { "id": "Qwen/Qwen3-235B-A22B-Instruct-2507", "name": "Qwen3 235B A22B", "desc": "Самая крупная Qwen3 MoE" },
+        { "id": "Qwen/Qwen2.5-72B-Instruct", "name": "Qwen2.5 72B Instruct", "desc": "Универсальная модель, отличный русский" },
+        { "id": "Qwen/Qwen2.5-Coder-32B-Instruct", "name": "Qwen2.5 Coder 32B", "desc": "Заточена под программирование" },
+        { "id": "Qwen/Qwen2.5-7B-Instruct", "name": "Qwen2.5 7B Instruct", "desc": "Быстрая и дешёвая" }
+      ]
+    },
+    {
+      "id": "llama",
+      "name": "Llama",
+      "icon": "🦙",
+      "models": [
+        { "id": "meta-llama/Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B", "desc": "Флагман Meta, сильный диалог" },
+        { "id": "meta-llama/Llama-3.1-8B-Instruct", "name": "Llama 3.1 8B", "desc": "Компактная и быстрая" },
+        { "id": "meta-llama/Llama-4-Scout-17B-16E-Instruct", "name": "Llama 4 Scout", "desc": "MoE с длинным контекстом" }
+      ]
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "icon": "🌬️",
+      "models": [
+        { "id": "mistralai/Mistral-Small-24B-Instruct-2501", "name": "Mistral Small 24B", "desc": "Баланс скорости и качества" },
+        { "id": "mistralai/Mixtral-8x7B-Instruct-v0.1", "name": "Mixtral 8x7B", "desc": "Классическая MoE" },
+        { "id": "mistralai/Mistral-7B-Instruct-v0.3", "name": "Mistral 7B v0.3", "desc": "Лёгкая базовая модель" }
+      ]
+    },
+    {
+      "id": "gemma",
+      "name": "Gemma",
+      "icon": "💎",
+      "models": [
+        { "id": "google/gemma-3-27b-it", "name": "Gemma 3 27B", "desc": "Старшая открытая модель Google" },
+        { "id": "google/gemma-2-27b-it", "name": "Gemma 2 27B", "desc": "Стабильная предыдущая версия" },
+        { "id": "google/gemma-2-9b-it", "name": "Gemma 2 9B", "desc": "Компактная версия" }
+      ]
+    },
+    {
+      "id": "microsoft",
+      "name": "Microsoft",
+      "icon": "🪟",
+      "models": [
+        { "id": "microsoft/phi-4", "name": "Phi-4", "desc": "Сильная малая модель, математика" },
+        { "id": "microsoft/Phi-3.5-mini-instruct", "name": "Phi-3.5 Mini", "desc": "Очень быстрая" }
+      ]
+    },
+    {
+      "id": "other",
+      "name": "Другие",
+      "icon": "✨",
+      "models": [
+        { "id": "HuggingFaceH4/zephyr-7b-beta", "name": "Zephyr 7B Beta", "desc": "Классика Hugging Face" },
+        { "id": "NousResearch/Hermes-3-Llama-3.1-8B", "name": "Hermes 3 8B", "desc": "Хорошо следует инструкциям" },
+        { "id": "CohereForAI/c4ai-command-r-plus-08-2024", "name": "Command R+", "desc": "Многоязычная, RAG" }
+      ]
+    }
+  ]
+}

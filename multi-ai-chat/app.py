@@ -1,0 +1,374 @@
+"""Multi AI Chat - FastAPI backend.
+
+The Hugging Face token lives ONLY here, in the HF_TOKEN environment variable.
+It is never sent to the browser: the frontend talks to /api/chat and this
+process adds the Authorization header on its way out to Hugging Face.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import pathlib
+import re
+from typing import Any, AsyncIterator, Literal
+
+import httpx
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, ValidationError
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("multi-ai-chat")
+
+BASE_DIR = pathlib.Path(__file__).parent
+STATIC_DIR = BASE_DIR / "static"
+MODELS_FILE = BASE_DIR / "models.json"
+
+HF_TOKEN = (os.environ.get("HF_TOKEN") or "").strip()
+HF_BASE_URL = (os.environ.get("HF_BASE_URL") or "https://router.huggingface.co/v1").rstrip("/")
+HF_TIMEOUT = float(os.environ.get("HF_TIMEOUT") or 120)
+
+# A Hugging Face Model ID looks like "owner/name" or, on the router, may carry
+# an explicit provider suffix such as "owner/name:together".
+MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._\-]+/[A-Za-z0-9._\-]+(:[A-Za-z0-9._\-]+)?$")
+
+MAX_MESSAGES = 120
+MAX_CHARS = 120_000
+
+app = FastAPI(title="Multi AI Chat", docs_url=None, redoc_url=None)
+
+
+# --------------------------------------------------------------------------- #
+# Schemas
+# --------------------------------------------------------------------------- #
+class Message(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    model: str
+    messages: list[Message] = Field(min_length=1)
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2048, ge=1, le=32000)
+    top_p: float = Field(default=0.95, gt=0.0, le=1.0)
+    stream: bool = True
+
+
+class ChatError(Exception):
+    """An error that already carries a user-facing Russian message."""
+
+    def __init__(self, code: str, message: str, status: int = 502) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status = status
+
+
+# --------------------------------------------------------------------------- #
+# Model catalogue
+# --------------------------------------------------------------------------- #
+def load_models() -> dict[str, Any]:
+    try:
+        with MODELS_FILE.open(encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as exc:  # pragma: no cover - only on a broken deploy
+        log.error("models.json unreadable: %s", exc)
+        return {"default": "deepseek-ai/DeepSeek-V3-0324", "categories": []}
+
+
+# --------------------------------------------------------------------------- #
+# Error translation
+# --------------------------------------------------------------------------- #
+MODEL_UNAVAILABLE = "Модель сейчас недоступна через Hugging Face Inference."
+
+
+def classify_http_error(status: int, body: str) -> ChatError:
+    """Map a Hugging Face HTTP response onto a friendly Russian message."""
+    low = body.lower()
+
+    if status in (401, 403):
+        if "gated" in low or "awaiting approval" in low or "accept" in low and "license" in low:
+            return ChatError(
+                "model_gated",
+                "Эта модель закрыта (gated). Откройте её страницу на Hugging Face и примите условия доступа.",
+                status,
+            )
+        return ChatError(
+            "bad_token",
+            "Неверный или просроченный HF_TOKEN. Проверьте секрет на сервере.",
+            status,
+        )
+
+    if status == 404:
+        return ChatError("model_unavailable", MODEL_UNAVAILABLE, status)
+
+    if status == 429:
+        return ChatError(
+            "rate_limit",
+            "Превышен лимит запросов Hugging Face. Подождите немного и повторите.",
+            status,
+        )
+
+    if status == 503 or "loading" in low or "currently loading" in low:
+        return ChatError(
+            "model_loading",
+            "Модель загружается на стороне Hugging Face. Попробуйте ещё раз через полминуты.",
+            status,
+        )
+
+    if status == 400 and ("not supported" in low or "no provider" in low or "unsupported" in low):
+        return ChatError("model_unavailable", MODEL_UNAVAILABLE, status)
+
+    detail = extract_hf_message(body)
+    suffix = f" ({detail})" if detail else ""
+    return ChatError(
+        "hf_error",
+        f"Ошибка Hugging Face {status}{suffix}",
+        status,
+    )
+
+
+def extract_hf_message(body: str) -> str:
+    try:
+        data = json.loads(body)
+    except Exception:
+        return body.strip()[:200]
+    if isinstance(data, dict):
+        err = data.get("error")
+        if isinstance(err, dict):
+            return str(err.get("message", ""))[:200]
+        if isinstance(err, str):
+            return err[:200]
+        if "message" in data:
+            return str(data["message"])[:200]
+    return body.strip()[:200]
+
+
+# --------------------------------------------------------------------------- #
+# Hugging Face plumbing
+# --------------------------------------------------------------------------- #
+def build_payload(req: ChatRequest, stream: bool) -> dict[str, Any]:
+    return {
+        "model": req.model,
+        "messages": [m.model_dump() for m in req.messages],
+        "temperature": req.temperature,
+        "max_tokens": req.max_tokens,
+        "top_p": req.top_p,
+        "stream": stream,
+    }
+
+
+def sse(event: dict[str, Any]) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+def validate(req: ChatRequest) -> None:
+    if not HF_TOKEN:
+        raise ChatError(
+            "no_token",
+            "На сервере не задан HF_TOKEN. Добавьте его в секреты хостинга и перезапустите приложение.",
+            503,
+        )
+    if not MODEL_ID_RE.match(req.model):
+        raise ChatError(
+            "bad_model_id",
+            "Некорректный Model ID. Формат: owner/name",
+            400,
+        )
+    if len(req.messages) > MAX_MESSAGES:
+        raise ChatError("too_many_messages", "Слишком длинная история чата.", 413)
+    if sum(len(m.content) for m in req.messages) > MAX_CHARS:
+        raise ChatError("too_long", "Слишком длинный запрос.", 413)
+
+
+async def stream_chat(req: ChatRequest) -> AsyncIterator[str]:
+    """Proxy a streaming completion, re-framed as our own SSE envelope."""
+    try:
+        validate(req)
+    except ChatError as err:
+        yield sse({"type": "error", "code": err.code, "message": err.message})
+        return
+
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+    url = f"{HF_BASE_URL}/chat/completions"
+    produced = False
+
+    try:
+        timeout = httpx.Timeout(HF_TIMEOUT, connect=30.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST", url, headers=headers, json=build_payload(req, True)
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = (await resp.aread()).decode("utf-8", "replace")
+                    err = classify_http_error(resp.status_code, body)
+                    log.warning("HF %s for %s: %s", resp.status_code, req.model, body[:300])
+                    yield sse({"type": "error", "code": err.code, "message": err.message})
+                    return
+
+                yield sse({"type": "start", "model": req.model})
+
+                async for raw in resp.aiter_lines():
+                    if not raw or not raw.startswith("data:"):
+                        continue
+                    data = raw[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if isinstance(chunk, dict) and chunk.get("error"):
+                        msg = extract_hf_message(data) or MODEL_UNAVAILABLE
+                        yield sse({"type": "error", "code": "hf_error", "message": msg})
+                        return
+
+                    for choice in chunk.get("choices") or []:
+                        delta = choice.get("delta") or {}
+                        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                        if reasoning:
+                            yield sse({"type": "reasoning", "content": reasoning})
+                        piece = delta.get("content")
+                        if piece:
+                            produced = True
+                            yield sse({"type": "delta", "content": piece})
+
+                    if chunk.get("usage"):
+                        yield sse({"type": "usage", "usage": chunk["usage"]})
+
+        if not produced:
+            yield sse(
+                {
+                    "type": "error",
+                    "code": "empty_response",
+                    "message": "Модель вернула пустой ответ. Попробуйте ещё раз или выберите другую модель.",
+                }
+            )
+            return
+
+        yield sse({"type": "done"})
+
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, asyncio.TimeoutError):
+        yield sse(
+            {
+                "type": "error",
+                "code": "timeout",
+                "message": "Время ожидания ответа истекло. Попробуйте ещё раз.",
+            }
+        )
+    except httpx.HTTPError as exc:
+        log.warning("network error: %s", exc)
+        yield sse(
+            {
+                "type": "error",
+                "code": "network",
+                "message": "Ошибка сети при обращении к Hugging Face.",
+            }
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # pragma: no cover - last-resort guard
+        log.exception("unexpected stream failure")
+        yield sse(
+            {
+                "type": "error",
+                "code": "internal",
+                "message": f"Внутренняя ошибка сервера: {type(exc).__name__}",
+            }
+        )
+
+
+async def complete_once(req: ChatRequest) -> dict[str, Any]:
+    """Non-streaming completion, used when the client asks for stream=false."""
+    validate(req)
+    headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
+    url = f"{HF_BASE_URL}/chat/completions"
+    timeout = httpx.Timeout(HF_TIMEOUT, connect=30.0)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, headers=headers, json=build_payload(req, False))
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout):
+        raise ChatError("timeout", "Время ожидания ответа истекло.", 504)
+    except httpx.HTTPError:
+        raise ChatError("network", "Ошибка сети при обращении к Hugging Face.", 502)
+
+    if resp.status_code >= 400:
+        raise classify_http_error(resp.status_code, resp.text)
+
+    data = resp.json()
+    choices = data.get("choices") or []
+    content = ""
+    if choices:
+        content = (choices[0].get("message") or {}).get("content") or ""
+    if not content:
+        raise ChatError("empty_response", "Модель вернула пустой ответ.", 502)
+    return {"content": content, "usage": data.get("usage"), "model": req.model}
+
+
+# --------------------------------------------------------------------------- #
+# Routes
+# --------------------------------------------------------------------------- #
+@app.get("/api/health")
+async def health() -> dict[str, Any]:
+    # Reports only whether a token exists - never the token itself.
+    return {"ok": True, "token_configured": bool(HF_TOKEN), "base_url": HF_BASE_URL}
+
+
+@app.get("/api/models")
+async def models() -> dict[str, Any]:
+    return load_models()
+
+
+@app.post("/api/chat")
+async def chat(payload: dict[str, Any]) -> Any:
+    try:
+        req = ChatRequest.model_validate(payload)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        where = ".".join(str(p) for p in first.get("loc", ()))
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "code": "bad_request",
+                    "message": f"Некорректный запрос: {where} - {first.get('msg')}",
+                }
+            },
+        )
+
+    if req.stream:
+        return StreamingResponse(
+            stream_chat(req),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
+    try:
+        return await complete_once(req)
+    except ChatError as err:
+        return JSONResponse(
+            status_code=err.status, content={"error": {"code": err.code, "message": err.message}}
+        )
+
+
+@app.get("/")
+async def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

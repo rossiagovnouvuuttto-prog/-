@@ -1,0 +1,115 @@
+name: Deploy Multi AI Chat to Hugging Face Spaces
+
+# Runs on GitHub's runners, which have unrestricted internet access, so this
+# workflow can reach huggingface.co and do the whole deploy end to end:
+# create the Space, store HF_TOKEN as a Space secret, upload the app.
+#
+# Setup (once):
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+#     Name:  HF_TOKEN
+#     Value: a Hugging Face token with WRITE permission
+#   Optional variable SPACE_NAME (defaults to "multi-ai-chat").
+
+on:
+  push:
+    branches: [claude/wizardly-wright-m1ubct, main]
+    paths:
+      - 'multi-ai-chat/**'
+      - '.github/workflows/deploy-hf-space.yml'
+  workflow_dispatch:
+    inputs:
+      space_name:
+        description: 'Space name (without the owner part)'
+        required: false
+        default: 'multi-ai-chat'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Hugging Face Hub client
+        run: pip install --upgrade "huggingface_hub>=0.26"
+
+      - name: Create the Space, store the secret, upload the app
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          SPACE_NAME: ${{ github.event.inputs.space_name || vars.SPACE_NAME || 'multi-ai-chat' }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          from huggingface_hub import HfApi
+
+          token = os.environ.get("HF_TOKEN", "").strip()
+          if not token:
+              sys.exit(
+                  "HF_TOKEN is not set.\n"
+                  "Add it under Settings -> Secrets and variables -> Actions."
+              )
+
+          api = HfApi(token=token)
+
+          try:
+              me = api.whoami()
+          except Exception as exc:
+              sys.exit(f"Could not authenticate with Hugging Face: {exc}")
+
+          owner = me["name"]
+          space = os.environ["SPACE_NAME"].strip() or "multi-ai-chat"
+          repo_id = f"{owner}/{space}"
+          print(f"Deploying to Space: {repo_id}")
+
+          auth = me.get("auth", {}).get("accessToken", {})
+          role = auth.get("role")
+          if role not in (None, "write", "fineGrained"):
+              sys.exit(
+                  f"This HF_TOKEN has role '{role}'. Creating and updating a Space "
+                  "needs a token with WRITE permission."
+              )
+
+          api.create_repo(
+              repo_id=repo_id,
+              repo_type="space",
+              space_sdk="docker",
+              exist_ok=True,
+          )
+
+          # The running Space needs its own token to call the Inference API.
+          # It is stored as a Space secret - never baked into the image.
+          api.add_space_secret(
+              repo_id=repo_id,
+              key="HF_TOKEN",
+              value=token,
+              description="Token used by the backend to call Hugging Face Inference",
+          )
+          print("HF_TOKEN stored as a Space secret")
+
+          api.upload_folder(
+              folder_path="multi-ai-chat",
+              repo_id=repo_id,
+              repo_type="space",
+              commit_message="Deploy Multi AI Chat from GitHub Actions",
+              ignore_patterns=["tests/*", "**/__pycache__/*", ".env", "*.pyc"],
+          )
+
+          url = f"https://huggingface.co/spaces/{repo_id}"
+          live = f"https://{owner.lower().replace('_', '-')}-{space.lower()}.hf.space"
+          print("\n" + "=" * 60)
+          print(f"Space page: {url}")
+          print(f"Live site : {live}")
+          print("The first build takes a few minutes.")
+          print("=" * 60)
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write("## Multi AI Chat deployed\n\n")
+                  fh.write(f"- **Live site:** {live}\n")
+                  fh.write(f"- **Space page:** {url}\n")
+                  fh.write("\nThe first build takes a few minutes.\n")
+          PY
