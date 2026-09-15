@@ -317,8 +317,125 @@ async def complete_once(req: ChatRequest) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# Featured models
+#
+# Each featured card lists several Model IDs of the same family. We ask the
+# router which models it actually serves and pick the first candidate that is
+# live, so a retired Model ID silently falls back to a sibling instead of
+# leaving a dead card on the page.
+# --------------------------------------------------------------------------- #
+FEATURED_TTL = 300.0
+_featured_cache: dict[str, Any] = {"at": 0.0, "data": None}
+
+
+def _base_id(model_id: str) -> str:
+    """Strips a provider suffix: 'owner/name:together' -> 'owner/name'."""
+    return model_id.split(":", 1)[0].strip().lower()
+
+
+async def fetch_served_ids(client: httpx.AsyncClient) -> set[str] | None:
+    """Model IDs the router currently serves, or None if the listing failed."""
+    try:
+        resp = await client.get(
+            f"{HF_BASE_URL}/models", headers={"Authorization": f"Bearer {HF_TOKEN}"}
+        )
+        if resp.status_code >= 400:
+            log.warning("model listing returned %s", resp.status_code)
+            return None
+        payload = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("model listing unavailable: %s", exc)
+        return None
+
+    rows = payload.get("data") if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return None
+
+    served: set[str] = set()
+    for row in rows:
+        ident = row.get("id") if isinstance(row, dict) else row
+        if isinstance(ident, str) and ident:
+            served.add(_base_id(ident))
+    return served or None
+
+
+async def probe_model(client: httpx.AsyncClient, model_id: str) -> bool:
+    """Cheapest possible call that still proves the model answers."""
+    try:
+        resp = await client.post(
+            f"{HF_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"},
+            json={
+                "model": model_id,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+                "stream": False,
+            },
+        )
+        return resp.status_code < 400
+    except httpx.HTTPError:
+        return False
+
+
+async def resolve_featured(force: bool = False) -> list[dict[str, Any]]:
+    cfg = load_models().get("featured") or []
+    now = asyncio.get_event_loop().time()
+
+    cached = _featured_cache["data"]
+    if cached is not None and not force and now - _featured_cache["at"] < FEATURED_TTL:
+        return cached
+
+    def card(entry: dict[str, Any], model_id: str, status: str) -> dict[str, Any]:
+        return {
+            "key": entry.get("key", ""),
+            "name": entry.get("name", ""),
+            "icon": entry.get("icon", ""),
+            "desc": entry.get("desc", ""),
+            "type": entry.get("type", "normal"),
+            "id": model_id,
+            "status": status,
+            "candidates": entry.get("candidates") or [],
+        }
+
+    if not HF_TOKEN:
+        result = [card(e, (e.get("candidates") or [""])[0], "offline") for e in cfg]
+        _featured_cache.update(at=now, data=result)
+        return result
+
+    timeout = httpx.Timeout(20.0, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        served = await fetch_served_ids(client)
+
+        if served is not None:
+            result = []
+            for entry in cfg:
+                cands = entry.get("candidates") or []
+                chosen = next((c for c in cands if _base_id(c) in served), None)
+                result.append(card(entry, chosen or (cands[0] if cands else ""),
+                                   "online" if chosen else "offline"))
+        else:
+            # Listing unavailable - fall back to probing the top candidates.
+            async def resolve_one(entry: dict[str, Any]) -> dict[str, Any]:
+                cands = (entry.get("candidates") or [])[:2]
+                for cand in cands:
+                    if await probe_model(client, cand):
+                        return card(entry, cand, "online")
+                return card(entry, cands[0] if cands else "", "offline")
+
+            result = list(await asyncio.gather(*(resolve_one(e) for e in cfg)))
+
+    _featured_cache.update(at=now, data=result)
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # Routes
 # --------------------------------------------------------------------------- #
+@app.get("/api/featured")
+async def featured(refresh: bool = False) -> dict[str, Any]:
+    return {"featured": await resolve_featured(force=refresh)}
+
+
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     # Reports only whether a token exists - never the token itself.

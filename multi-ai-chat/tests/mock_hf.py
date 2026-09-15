@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -75,6 +76,28 @@ ERRORS = {
 }
 
 
+# Models the fake router "serves". Chosen so featured resolution is exercised
+# in all three shapes: first candidate live (DeepSeek, Mistral), first candidate
+# retired so the family falls back (Qwen), and nothing live at all (Llama).
+SERVED = {
+    "deepseek-ai/DeepSeek-V3-0324",
+    "Qwen/Qwen2.5-7B-Instruct",
+    "mistralai/Mistral-7B-Instruct-v0.3",
+    "google/gemma-2-9b-it",
+    "mock/ok",
+    "mock/slow",
+    "mock/reasoning",
+}
+
+
+@app.get("/v1/models")
+async def models():
+    # MOCK_NO_LISTING exercises the probe-based fallback in app.py.
+    if os.environ.get("MOCK_NO_LISTING"):
+        return JSONResponse(status_code=500, content={"error": {"message": "listing down"}})
+    return {"object": "list", "data": [{"id": m, "object": "model"} for m in sorted(SERVED)]}
+
+
 @app.post("/v1/chat/completions")
 async def completions(request: Request):
     body = await request.json()
@@ -87,6 +110,11 @@ async def completions(request: Request):
     if model in ERRORS:
         status, payload = ERRORS[model]
         return JSONResponse(status_code=status, content=payload)
+
+    # Anything the fake router does not serve behaves like a retired Model ID,
+    # so probe-based featured resolution can tell live models from dead ones.
+    if model not in SERVED and not model.startswith("mock/"):
+        return JSONResponse(status_code=404, content={"error": {"message": "Model not found"}})
 
     if not body.get("stream"):
         return {

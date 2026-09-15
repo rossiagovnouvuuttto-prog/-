@@ -50,6 +50,7 @@ const state = {
   currentId: load(LS.current, null),
   settings: Object.assign({}, DEFAULT_SETTINGS, load(LS.settings, {})),
   catalog: { default: 'deepseek-ai/DeepSeek-V3-0324', categories: [] },
+  featured: [],
   customModels: load(LS.custom, []),
   model: load(LS.model, null),
   activeCat: 'all',
@@ -310,8 +311,75 @@ function allModels() {
   return list;
 }
 function modelLabel(id) {
+  const star = state.featured.find((f) => f.id === id);
+  if (star) return `${star.icon} ${star.name}`;
   const hit = allModels().find((m) => m.id === id);
   return hit ? hit.name : (id || '—');
+}
+
+/* ==============================================================
+   Starter cards - the four featured models
+   The backend resolves each family to a Model ID that Hugging Face
+   actually serves, and tells us whether it is online.
+   ============================================================== */
+async function loadFeatured() {
+  try {
+    const res = await fetch('/api/featured');
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    state.featured = Array.isArray(data.featured) ? data.featured : [];
+  } catch {
+    state.featured = [];
+  }
+}
+
+function starterCard(f) {
+  const card = el('button', 'starter');
+  card.dataset.type = f.type || 'normal';
+  card.dataset.key = f.key || '';
+  if (f.id === state.model) card.classList.add('chosen');
+  const online = f.status === 'online';
+
+  card.innerHTML =
+    '<span class="s-shine" aria-hidden="true"></span>' +
+    '<span class="s-icon"></span>' +
+    '<span class="s-body"><span class="s-name"></span><span class="s-desc"></span></span>' +
+    `<span class="s-status ${online ? 'on' : 'off'}"><i></i><span></span></span>` +
+    '<span class="s-id"></span>';
+
+  card.querySelector('.s-icon').textContent = f.icon || '';
+  card.querySelector('.s-name').textContent = f.name || '';
+  card.querySelector('.s-desc').textContent = f.desc || '';
+  card.querySelector('.s-status span').textContent = online ? 'Online' : 'Offline';
+  card.querySelector('.s-id').textContent = f.id || '';
+  card.title = f.id || '';
+
+  card.onclick = () => {
+    setModel(f.id, { silent: true });
+    if (online) {
+      toast('ok', `${f.icon} ${f.name} выбран`, f.id, 2600);
+    } else {
+      toast('err', `${f.name} сейчас офлайн`,
+        'Модель сейчас недоступна через Hugging Face Inference. Выберите другую карточку.', 7000);
+    }
+    closeModal('modelModal');
+    renderChat();
+    renderStarters();
+    $('input').focus();
+  };
+  return card;
+}
+
+/** Repaints every starter grid currently on the page. */
+function renderStarters() {
+  for (const box of document.querySelectorAll('.starters')) {
+    box.innerHTML = '';
+    if (!state.featured.length) {
+      box.appendChild(el('div', 'starters-empty', 'Не удалось загрузить список моделей.'));
+      continue;
+    }
+    for (const f of state.featured) box.appendChild(starterCard(f));
+  }
 }
 
 /* ==============================================================
@@ -461,6 +529,13 @@ function welcomeNode() {
     '<div class="welcome-logo" aria-hidden="true"></div>' +
     '<h1>Multi AI Chat</h1>' +
     '<p>Выберите нейросеть и начните общение</p>';
+
+  const starters = el('div', 'starters');
+  w.appendChild(starters);
+
+  const quickLabel = el('div', 'quick-label', 'Или начните с готового вопроса');
+  w.appendChild(quickLabel);
+
   const grid = el('div', 'quick');
   for (const q of QUICK) {
     const b = el('button');
@@ -581,6 +656,7 @@ function renderChat() {
 
   if (!chat || !chat.messages.length) {
     box.appendChild(welcomeNode());
+    renderStarters();
     updateTopbar();
     return;
   }
@@ -815,6 +891,7 @@ function openPicker() {
 }
 
 function renderPicker() {
+  renderStarters();
   const cats = $('pickerCats');
   const box = $('pickerModels');
   const q = state.modelFilter.trim().toLowerCase();
@@ -1044,8 +1121,9 @@ async function boot() {
   renderSidebar();
   renderChat();
   refreshSendState();
-  await loadCatalog();
+  await Promise.all([loadCatalog(), loadFeatured()]);
   renderChat();
+  renderStarters();
   checkHealth();
 }
 

@@ -67,6 +67,7 @@
       </button>
     </header>
 
+    <div class="arena" aria-hidden="true"><span class="pokeball-bg"></span></div>
     <div class="messages" id="messages" role="log" aria-live="polite"></div>
 
     <div class="composer-wrap">
@@ -97,6 +98,11 @@
     <div class="modal-search">
       <svg viewBox="0 0 24 24" class="search-icon" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
       <input type="search" id="modelSearch" placeholder="Поиск модели или Model ID" autocomplete="off">
+    </div>
+
+    <div class="picker-featured">
+      <div class="picker-featured-label">Быстрый выбор</div>
+      <div class="starters starters-compact" id="pickerStarters"></div>
     </div>
 
     <div class="picker">

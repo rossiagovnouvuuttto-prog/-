@@ -1,8 +1,8 @@
 ---
 title: Multi AI Chat
-emoji: 💬
-colorFrom: blue
-colorTo: purple
+emoji: ⚡
+colorFrom: yellow
+colorTo: red
 sdk: docker
 app_port: 7860
 pinned: false
@@ -11,8 +11,9 @@ short_description: Чат с нейросетями Hugging Face — DeepSeek, Q
 
 # Multi AI Chat
 
-Веб-чат с моделями Hugging Face: выбираете нейросеть и общаетесь. Тёмный интерфейс,
-потоковые ответы, Markdown с подсветкой кода, история чатов, настройки генерации.
+Веб-чат с моделями Hugging Face: выбираете нейросеть и общаетесь. Яркий игровой
+интерфейс в стиле Pokémon, потоковые ответы, Markdown с подсветкой кода, история
+чатов, настройки генерации.
 
 ```
 Браузер  ──POST /api/chat──▶  FastAPI (app.py)  ──Bearer HF_TOKEN──▶  Hugging Face Router
@@ -25,6 +26,8 @@ short_description: Чат с нейросетями Hugging Face — DeepSeek, Q
 
 ## Возможности
 
+- **Четыре карточки на старте** — DeepSeek, Qwen, Llama, Mistral: иконка, название,
+  краткое описание и живой статус Online / Offline. Один клик выбирает модель для чата
 - **Выбор модели** — 22 модели в 7 категориях + любая своя по Hugging Face Model ID
 - **Стриминг** — ответ печатается по мере генерации, есть кнопка «Остановить»
 - **Markdown** — заголовки, списки, таблицы, цитаты, ссылки, блоки кода с подсветкой
@@ -35,6 +38,28 @@ short_description: Чат с нейросетями Hugging Face — DeepSeek, Q
 - **Адаптив** — телефон, планшет, ПК; на телефоне меню открывается через ☰
 - **Ошибки** — неверный токен, недоступная модель, загрузка модели, rate limit,
   таймаут, обрыв сети: сайт продолжает работать и показывает уведомление
+- **Оформление** — игровая тема в духе Pokémon: яркие карточки по типам, объёмные
+  кнопки, плавные анимации; текст везде контрастный (тёмный на ярком, белый на синем)
+
+## Как выбирается рабочая модель
+
+У каждой из четырёх карточек в `models.json` лежит не один Model ID, а список
+`candidates` — модели одного семейства. При запросе `/api/featured` backend
+спрашивает у роутера Hugging Face список обслуживаемых моделей и берёт **первый
+кандидат, который реально работает**:
+
+```
+DeepSeek : DeepSeek-V3-0324 → DeepSeek-V3 → DeepSeek-R1-Distill-Qwen-32B
+Qwen     : Qwen2.5-72B-Instruct → Qwen2.5-7B-Instruct → Qwen3-235B-A22B-Instruct-2507
+Llama    : Llama-3.3-70B-Instruct → Llama-3.1-8B-Instruct → Meta-Llama-3-8B-Instruct
+Mistral  : Mistral-7B-Instruct-v0.3 → Mistral-Small-24B-Instruct-2501 → Mixtral-8x7B
+```
+
+Если ни один кандидат семейства не обслуживается, карточка честно показывает
+**Offline**, а попытка написать в неё выдаёт обычное сообщение об ошибке — сайт
+не ломается. Результат кешируется на 5 минут; `/api/featured?refresh=true`
+пересчитывает его сразу. Когда список моделей недоступен, backend переходит на
+запасной путь и проверяет кандидатов пробным запросом.
 
 ## Где хранится HF_TOKEN
 
@@ -69,6 +94,10 @@ short_description: Чат с нейросетями Hugging Face — DeepSeek, Q
 Обязателен только `id`. После изменения перезапустите приложение (или сделайте
 redeploy Space). Новую категорию можно добавить в массив `categories`.
 
+**Способ 3 — новая карточка.** Добавьте элемент в массив `featured`, указав `name`,
+`icon`, `desc`, `type` (`electric` / `fire` / `water` / `grass` — задаёт цвет карточки)
+и список `candidates` с Model ID одного семейства.
+
 Если модель не обслуживается ни одним inference-провайдером Hugging Face, сайт не
 ломается — он показывает: **«Модель сейчас недоступна через Hugging Face Inference.»**
 
@@ -98,6 +127,7 @@ docker run -p 7860:7860 -e HF_TOKEN=hf_... multi-ai-chat
 | --- | --- | --- |
 | `GET` | `/api/health` | Статус сервера и факт наличия токена |
 | `GET` | `/api/models` | Каталог моделей из `models.json` |
+| `GET` | `/api/featured` | Четыре карточки с подобранным Model ID и статусом |
 | `POST` | `/api/chat` | Запрос к модели, по умолчанию потоковый (SSE) |
 
 `POST /api/chat` принимает:
@@ -143,10 +173,10 @@ python3 tests/test_frontend.py   # реальный Chromium: UI, Markdown, ис
 
 ```
 app.py              backend: прокси к Hugging Face, SSE, обработка ошибок
-models.json         каталог моделей (правится руками)
+models.json         каталог моделей + четыре карточки с запасными Model ID
 static/index.html   разметка
-static/styles.css   тёмная тема, адаптив
-static/app.js       состояние, Markdown-рендер, стриминг, UI
+static/styles.css   Pokémon-тема, адаптив
+static/app.js       состояние, карточки моделей, Markdown-рендер, стриминг, UI
 tests/              mock Hugging Face + проверки backend и браузера
 Dockerfile          образ для Hugging Face Spaces (порт 7860)
 ```

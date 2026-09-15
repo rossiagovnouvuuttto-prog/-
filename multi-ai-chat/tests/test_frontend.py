@@ -59,6 +59,39 @@ with sync_playwright() as pw:
           page.get_attribute("#input", "placeholder") == "Напишите сообщение...")
     page.screenshot(path=str(SHOTS / "01-welcome.png"), full_page=True)
 
+    print("\n== starter cards (the four models) ==")
+    cards = page.locator(".welcome .starters .starter")
+    check("four starter cards", cards.count() == 4, str(cards.count()))
+    names = [cards.nth(i).locator(".s-name").inner_text() for i in range(cards.count())]
+    check("DeepSeek card", "DeepSeek" in names, str(names))
+    check("Qwen card", "Qwen" in names, str(names))
+    check("Llama card", "Llama" in names, str(names))
+    check("Mistral card", "Mistral" in names, str(names))
+
+    descs = [cards.nth(i).locator(".s-desc").inner_text() for i in range(4)]
+    check("each card has a description", all(d.strip() for d in descs), str(descs))
+    icons = [cards.nth(i).locator(".s-icon").inner_text() for i in range(4)]
+    check("each card has an icon", all(i.strip() for i in icons), str(icons))
+
+    statuses = [cards.nth(i).locator(".s-status").inner_text().strip() for i in range(4)]
+    check("status pill on every card",
+          all(t in ("Online", "Offline") for t in statuses), str(statuses))
+    check("online and offline both rendered",
+          statuses.count("Online") == 3 and statuses.count("Offline") == 1, str(statuses))
+    check("cards are type-coloured",
+          len({cards.nth(i).get_attribute("data-type") for i in range(4)}) == 4)
+    check("bright card text is dark for contrast",
+          cards.nth(0).evaluate("n => getComputedStyle(n).color") in
+          ("rgb(10, 26, 51)",), cards.nth(0).evaluate("n => getComputedStyle(n).color"))
+    page.screenshot(path=str(SHOTS / "01b-starters.png"), full_page=True)
+
+    cards.nth(0).click()
+    page.wait_for_timeout(300)
+    check("clicking a card switches model",
+          "DeepSeek" in page.inner_text("#modelName"), page.inner_text("#modelName"))
+    check("chosen card is marked",
+          page.locator(".welcome .starter.chosen").count() == 1)
+
     print("\n== model picker ==")
     page.click("#pickModelBtn")
     page.wait_for_selector("#modelModal:not([hidden])")
@@ -67,6 +100,9 @@ with sync_playwright() as pw:
         check(f"category {name}", name in cats)
     check("model cards listed", page.locator(".model-card").count() >= 20,
           str(page.locator(".model-card").count()))
+    check("picker shows the starter row",
+          page.locator("#pickerStarters .starter").count() == 4,
+          str(page.locator("#pickerStarters .starter").count()))
     page.screenshot(path=str(SHOTS / "02-model-picker.png"))
 
     page.click("#pickerCats button:has-text('DeepSeek')")
@@ -210,12 +246,36 @@ with sync_playwright() as pw:
     check("regenerate keeps one answer", page.locator(".msg").count() == before,
           f"{before} -> {page.locator('.msg').count()}")
 
+    print("\n== sending a message with each of the four models ==")
+    for idx, family in enumerate(["DeepSeek", "Qwen", "Llama", "Mistral"]):
+        page.click("#newChatBtn")
+        page.wait_for_selector(".welcome .starters .starter", timeout=10000)
+        card = page.locator(".welcome .starters .starter").nth(idx)
+        status = card.locator(".s-status").inner_text().strip()
+        card.click()
+        page.wait_for_timeout(250)
+        send(page, f"Привет от {family}")
+        page.wait_for_selector(".msg.ai .msg-acts", timeout=30000)
+        bubble = page.locator(".msg.ai .bubble").first
+        if status == "Online":
+            check(f"{family} answers in the UI",
+                  bubble.locator(".code-block").count() == 1
+                  and "error" not in (bubble.get_attribute("class") or ""),
+                  bubble.inner_text()[:70])
+        else:
+            check(f"{family} shows the unavailable notice",
+                  "Модель сейчас недоступна через Hugging Face Inference."
+                  in bubble.inner_text(), bubble.inner_text()[:90])
+        check(f"{family} keeps the app usable", page.locator("#input").is_enabled())
+
     print("\n== persistence ==")
+    model_before = page.inner_text("#modelName")
     page.reload(wait_until="networkidle")
     check("history survives reload", page.locator(".chat-item").count() >= 5,
           str(page.locator(".chat-item").count()))
     check("messages survive reload", page.locator(".msg").count() >= 2)
-    check("model survives reload", "ok" in page.inner_text("#modelName"))
+    check("model survives reload", page.inner_text("#modelName") == model_before,
+          f"{model_before!r} -> {page.inner_text('#modelName')!r}")
 
     print("\n== mobile ==")
     mob = ctx.new_page()

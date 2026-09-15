@@ -121,6 +121,50 @@ with urllib.request.urlopen(req, timeout=60) as resp:
 check("returns content", bool(data.get("content")))
 check("returns usage", bool(data.get("usage")))
 
+print("\n== featured starter cards ==")
+with urllib.request.urlopen(APP + "/api/featured", timeout=60) as resp:
+    cards = json.load(resp)["featured"]
+
+check("returns four cards", len(cards) == 4, str(len(cards)))
+check("families are the requested four",
+      [c["name"] for c in cards] == ["DeepSeek", "Qwen", "Llama", "Mistral"],
+      str([c["name"] for c in cards]))
+check("every card has an icon", all(c["icon"] for c in cards))
+check("every card has a description", all(c["desc"] for c in cards))
+check("every card has a Model ID", all("/" in c["id"] for c in cards))
+check("status is online or offline",
+      all(c["status"] in ("online", "offline") for c in cards),
+      str([c["status"] for c in cards]))
+
+by_name = {c["name"]: c for c in cards}
+check("live first choice is kept",
+      by_name["DeepSeek"]["id"] == "deepseek-ai/DeepSeek-V3-0324"
+      and by_name["DeepSeek"]["status"] == "online",
+      json.dumps(by_name["DeepSeek"], ensure_ascii=False))
+check("retired ID falls back inside the same family",
+      by_name["Qwen"]["id"] == "Qwen/Qwen2.5-7B-Instruct"
+      and by_name["Qwen"]["status"] == "online",
+      json.dumps(by_name["Qwen"], ensure_ascii=False))
+check("family with nothing served reads offline",
+      by_name["Llama"]["status"] == "offline",
+      json.dumps(by_name["Llama"], ensure_ascii=False))
+check("resolved model actually answers",
+      by_name["Mistral"]["status"] == "online",
+      json.dumps(by_name["Mistral"], ensure_ascii=False))
+
+print("\n== chatting with each resolved model ==")
+for name in ("DeepSeek", "Qwen", "Mistral"):
+    ev = post_stream(base(by_name[name]["id"]))
+    text = "".join(e.get("content", "") for e in ev if e.get("type") == "delta")
+    check(f"{name} answers", len(text) > 50 and not any(e.get("type") == "error" for e in ev),
+          str([e.get("type") for e in ev][:4]))
+
+ev = post_stream(base(by_name["Llama"]["id"]))
+err = next((e for e in ev if e.get("type") == "error"), None)
+check("offline family degrades gracefully",
+      bool(err) and "Hugging Face Inference" in err.get("message", ""),
+      json.dumps(err, ensure_ascii=False) if err else "no error event")
+
 print("\n== secrets are not exposed ==")
 with urllib.request.urlopen(APP + "/api/health", timeout=20) as resp:
     health = json.load(resp)
