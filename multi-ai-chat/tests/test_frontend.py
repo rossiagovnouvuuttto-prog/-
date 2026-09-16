@@ -205,6 +205,58 @@ with sync_playwright() as pw:
     page.click("#settingsModal [data-close]")
     page.wait_for_selector("#settingsModal", state="hidden")
 
+    print("\n== themes ==")
+    page.click("#settingsBtn")
+    page.wait_for_selector("#settingsModal:not([hidden])")
+    picker = page.locator("#themePicker button")
+    check("five themes offered", picker.count() == 5, str(picker.count()))
+    labels = [picker.nth(i).inner_text().strip() for i in range(picker.count())]
+    for want in ("Pokémon", "Аниме", "Minecraft", "Roblox", "GTA SA"):
+        check(f"theme {want} listed", any(want in l for l in labels), str(labels))
+    check("Pokémon active by default",
+          "active" in (picker.nth(0).get_attribute("class") or ""),
+          picker.nth(0).get_attribute("class"))
+    check("document starts on the pokemon theme",
+          page.evaluate("document.documentElement.dataset.theme") == "pokemon")
+
+    before = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    page.locator("#themePicker button[data-t=minecraft]").click()
+    page.wait_for_timeout(400)
+    check("switching sets the theme attribute",
+          page.evaluate("document.documentElement.dataset.theme") == "minecraft",
+          page.evaluate("document.documentElement.dataset.theme"))
+    after = page.evaluate("getComputedStyle(document.body).backgroundColor")
+    check("switching repaints the page", before != after, f"{before} -> {after}")
+    check("minecraft squares the corners",
+          page.evaluate("getComputedStyle(document.querySelector('.composer')).borderRadius").startswith("0"),
+          page.evaluate("getComputedStyle(document.querySelector('.composer')).borderRadius"))
+    check("active marker moves",
+          "active" in (page.locator("#themePicker button[data-t=minecraft]").get_attribute("class") or ""))
+    page.screenshot(path=str(SHOTS / "09-theme-minecraft.png"), full_page=True)
+
+    for theme in ("anime", "roblox", "gta"):
+        page.locator(f"#themePicker button[data-t={theme}]").click()
+        page.wait_for_timeout(250)
+        check(f"{theme} applies",
+              page.evaluate("document.documentElement.dataset.theme") == theme)
+        page.screenshot(path=str(SHOTS / f"09-theme-{theme}.png"), full_page=True)
+
+    page.click("#settingsModal [data-close]")
+    page.reload(wait_until="networkidle")
+    check("theme survives reload",
+          page.evaluate("document.documentElement.dataset.theme") == "gta",
+          page.evaluate("document.documentElement.dataset.theme"))
+
+    page.click("#settingsBtn")
+    page.wait_for_selector("#settingsModal:not([hidden])")
+    page.click("#resetSettings")
+    page.wait_for_timeout(300)
+    check("reset returns to Pokémon",
+          page.evaluate("document.documentElement.dataset.theme") == "pokemon",
+          page.evaluate("document.documentElement.dataset.theme"))
+    page.click("#settingsModal [data-close]")
+    page.wait_for_selector("#settingsModal", state="hidden")
+
     print("\n== error handling ==")
     page.click("#newChatBtn")
     pick_model(page, "mock/missing")

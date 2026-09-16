@@ -26,7 +26,16 @@ const LS = {
   custom:   'mac.customModels',
 };
 
+const THEMES = [
+  { id: 'pokemon',   name: 'Pokémon' },
+  { id: 'anime',     name: 'Аниме' },
+  { id: 'minecraft', name: 'Minecraft' },
+  { id: 'roblox',    name: 'Roblox' },
+  { id: 'gta',       name: 'GTA SA' },
+];
+
 const DEFAULT_SETTINGS = {
+  theme: 'pokemon',
   systemPrompt: 'Ты — полезный ИИ-ассистент. Отвечай понятно, по существу и на языке пользователя. Оформляй код в Markdown-блоках.',
   temperature: 0.7,
   maxTokens: 2048,
@@ -59,6 +68,12 @@ const state = {
   abort: null,
   renameTarget: null,
 };
+
+function applyTheme(id) {
+  const known = THEMES.some((t) => t.id === id) ? id : 'pokemon';
+  document.documentElement.dataset.theme = known;
+}
+applyTheme(state.settings.theme);
 
 const currentChat = () => state.chats.find((c) => c.id === state.currentId) || null;
 const persistChats = () => { save(LS.chats, state.chats); save(LS.current, state.currentId); };
@@ -992,7 +1007,29 @@ function addCustomModel() {
 /* ==============================================================
    Settings
    ============================================================== */
+function renderThemes() {
+  const box = $('themePicker');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const t of THEMES) {
+    const b = el('button', state.settings.theme === t.id ? 'active' : '');
+    b.type = 'button';
+    b.dataset.t = t.id;
+    b.innerHTML = '<span class="t-swatch"></span><span></span>';
+    b.querySelectorAll('span')[1].textContent = t.name;
+    b.onclick = () => {
+      state.settings.theme = t.id;
+      save(LS.settings, state.settings);
+      applyTheme(t.id);
+      renderThemes();
+      toast('ok', `Стиль: ${t.name}`, '', 1800);
+    };
+    box.appendChild(b);
+  }
+}
+
 function fillSettings() {
+  renderThemes();
   $('systemPrompt').value = state.settings.systemPrompt;
   $('temperature').value = state.settings.temperature;
   $('maxTokens').value = state.settings.maxTokens;
@@ -1019,6 +1056,7 @@ function wireSettings() {
   $('resetSettings').onclick = () => {
     state.settings = { ...DEFAULT_SETTINGS };
     save(LS.settings, state.settings);
+    applyTheme(state.settings.theme);
     fillSettings();
     toast('ok', 'Настройки сброшены', '', 2200);
   };
