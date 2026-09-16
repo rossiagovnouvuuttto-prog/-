@@ -18,4 +18,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY --chown=user . .
 
 EXPOSE 7860
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+# Shell form so $PORT expands: Render (and most PaaS) inject the port to bind,
+# while Hugging Face Spaces expects 7860 - the fallback keeps both working.
+CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-7860}

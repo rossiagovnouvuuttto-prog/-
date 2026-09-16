@@ -121,6 +121,38 @@ docker build -t multi-ai-chat .
 docker run -p 7860:7860 -e HF_TOKEN=hf_... multi-ai-chat
 ```
 
+## Публикация на Cloudflare Workers (без Git и без оплаты)
+
+Docker-хостинг на Hugging Face стал платным, поэтому есть вторая сборка: тот же
+сайт целиком (фронтенд + backend) упакован в один файл `worker/worker.js`, который
+вставляется прямо в браузере.
+
+1. Зарегистрируйтесь на [cloudflare.com](https://dash.cloudflare.com/sign-up).
+2. **Compute (Workers)** → **Create** → **Start from Hello World** → задайте имя
+   `multi-ai-chat` → **Deploy**.
+3. Откройте **Edit code**, выделите весь пример и вставьте содержимое `worker/worker.js`
+   → **Deploy**.
+4. **Settings** → **Variables and Secrets** → **Add** → тип **Secret**,
+   имя `HF_TOKEN`, значение — токен с huggingface.co → **Deploy**.
+
+Сайт открывается по адресу `https://multi-ai-chat.<ваш-поддомен>.workers.dev`.
+
+Токен и здесь остаётся только на сервере: он хранится в секретах Worker, а браузер
+общается исключительно с `/api/chat`.
+
+Файл `worker.js` собирается из тех же `static/` и `models.json`:
+
+```bash
+python3 worker/build_worker.py
+```
+
+Локальная проверка:
+
+```bash
+cd worker && npx wrangler dev --port 8790      # переменные берутся из .dev.vars
+APP_URL=http://127.0.0.1:8790 python3 ../tests/test_backend.py
+```
+
 ## API
 
 | Метод | Путь | Назначение |
@@ -178,5 +210,7 @@ static/index.html   разметка
 static/styles.css   Pokémon-тема, адаптив
 static/app.js       состояние, карточки моделей, Markdown-рендер, стриминг, UI
 tests/              mock Hugging Face + проверки backend и браузера
-Dockerfile          образ для Hugging Face Spaces (порт 7860)
+Dockerfile          образ для Docker-хостинга (порт из $PORT, иначе 7860)
+worker/worker_src.js тот же backend на JavaScript для Cloudflare Workers
+worker/build_worker.py собирает worker.js: backend + вшитый фронтенд одним файлом
 ```

@@ -1,0 +1,5 @@
+# Only needed for local testing (wrangler dev). Pasting worker.js into the
+# Cloudflare dashboard does not require this file.
+name = "multi-ai-chat"
+main = "worker.js"
+compatibility_date = "2024-11-01"
