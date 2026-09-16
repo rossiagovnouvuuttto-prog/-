@@ -28,6 +28,14 @@ TOKEN_FIELD = """      <div class="field">
         </p>
       </div>
 
+      <div class="field">
+        <label for="deepseekKey">Ключ DeepSeek <span class="tag-opt">необязательно</span></label>
+        <input type="password" id="deepseekKey" placeholder="sk-..." autocomplete="off" spellcheck="false">
+        <p class="hint">Для карточки «DeepSeek API». Работает в обход лимитов Hugging Face, но API платный.
+          <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">Получить ключ</a>
+        </p>
+      </div>
+
 """
 
 SETTINGS_ANCHOR = """      <div class="field">

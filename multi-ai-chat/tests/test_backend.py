@@ -123,16 +123,20 @@ check("returns content", bool(data.get("content")))
 check("returns usage", bool(data.get("usage")))
 
 print("\n== featured starter cards ==")
+with urllib.request.urlopen(APP + "/api/health", timeout=20) as resp:
+    health_pre = json.load(resp)
 with urllib.request.urlopen(APP + "/api/featured", timeout=60) as resp:
     cards = json.load(resp)["featured"]
 
-check("returns four cards", len(cards) == 4, str(len(cards)))
-check("families are the requested four",
-      [c["name"] for c in cards] == ["DeepSeek", "Qwen", "Llama", "Mistral"],
+check("returns five cards", len(cards) == 5, str(len(cards)))
+check("families are the requested ones",
+      [c["name"] for c in cards] == ["DeepSeek", "Qwen", "Llama", "Mistral", "DeepSeek API"],
       str([c["name"] for c in cards]))
 check("every card has an icon", all(c["icon"] for c in cards))
 check("every card has a description", all(c["desc"] for c in cards))
-check("every card has a Model ID", all("/" in c["id"] for c in cards))
+check("every card has a Model ID",
+      all("/" in c["id"] or c["id"].startswith("deepseek:") for c in cards),
+      str([c["id"] for c in cards]))
 check("status is online or offline",
       all(c["status"] in ("online", "offline") for c in cards),
       str([c["status"] for c in cards]))
@@ -152,6 +156,30 @@ check("family with nothing served reads offline",
 check("resolved model actually answers",
       by_name["Mistral"]["status"] == "online",
       json.dumps(by_name["Mistral"], ensure_ascii=False))
+
+print("\n== the DeepSeek API provider ==")
+ds = by_name["DeepSeek API"]
+check("card is routed to deepseek", ds["provider"] == "deepseek", json.dumps(ds, ensure_ascii=False))
+check("card resolved to a prefixed id", ds["id"].startswith("deepseek:"), ds["id"])
+check("card is online with a key set", ds["status"] == "online", ds["status"])
+check("health reports the deepseek key", health_pre.get("deepseek_configured") is True,
+      json.dumps(health_pre))
+
+ev = post_stream(base(ds["id"]))
+text = "".join(e.get("content", "") for e in ev if e.get("type") == "delta")
+check("DeepSeek API answers", len(text) > 50 and not any(e.get("type") == "error" for e in ev),
+      str([e.get("type") for e in ev][:4]))
+
+ev = post_stream(base("deepseek:no-such-model"))
+err = next((e for e in ev if e.get("type") == "error"), None)
+check("unknown DeepSeek model is named as such",
+      bool(err) and "DeepSeek API" in err.get("message", ""),
+      json.dumps(err, ensure_ascii=False) if err else "none")
+
+ev = post_stream(base("deepseek:bad id"))
+err = next((e for e in ev if e.get("type") == "error"), None)
+check("malformed deepseek id rejected", bool(err) and err.get("code") == "bad_model_id",
+      json.dumps(err, ensure_ascii=False) if err else "none")
 
 print("\n== chatting with each resolved model ==")
 for name in ("DeepSeek", "Qwen", "Mistral"):

@@ -12,7 +12,10 @@
 // __MODELS__
 
 const HF_DEFAULT_BASE = 'https://router.huggingface.co/v1';
+const DEEPSEEK_DEFAULT_BASE = 'https://api.deepseek.com/v1';
+const DEEPSEEK_PREFIX = 'deepseek:';
 const MODEL_ID_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$/;
+const DEEPSEEK_ID_RE = /^deepseek:[A-Za-z0-9._-]+$/;
 const MAX_MESSAGES = 120;
 const MAX_CHARS = 120000;
 const FEATURED_TTL_MS = 300000;
@@ -24,8 +27,21 @@ let featuredCache = { at: 0, data: null };
 const cfg = (env) => ({
   token: (env.HF_TOKEN || '').trim(),
   baseUrl: (env.HF_BASE_URL || HF_DEFAULT_BASE).replace(/\/+$/, ''),
+  dsKey: (env.DEEPSEEK_API_KEY || '').trim(),
+  dsBaseUrl: (env.DEEPSEEK_BASE_URL || DEEPSEEK_DEFAULT_BASE).replace(/\/+$/, ''),
   timeout: Number(env.HF_TIMEOUT || 120) * 1000,
 });
+
+/** Where a model id goes, and under whose key. */
+function routeFor(modelId, conf) {
+  if (modelId.startsWith(DEEPSEEK_PREFIX)) {
+    return {
+      provider: 'deepseek', baseUrl: conf.dsBaseUrl, key: conf.dsKey,
+      model: modelId.slice(DEEPSEEK_PREFIX.length),
+    };
+  }
+  return { provider: 'hf', baseUrl: conf.baseUrl, key: conf.token, model: modelId };
+}
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -49,8 +65,26 @@ function extractHfMessage(body) {
   return body.trim().slice(0, 200);
 }
 
-function classifyHttpError(status, body) {
+function classifyHttpError(status, body, provider = 'hf') {
   const low = (body || '').toLowerCase();
+
+  if (provider === 'deepseek') {
+    if (status === 401 || status === 403) {
+      return { code: 'bad_token', message: 'Неверный ключ DeepSeek. Проверьте его в настройках.' };
+    }
+    if (status === 402) {
+      return {
+        code: 'quota',
+        message: 'Недостаточно средств на балансе DeepSeek. Пополните его на platform.deepseek.com.',
+      };
+    }
+    if (status === 429) {
+      return { code: 'rate_limit', message: 'Превышен лимит запросов DeepSeek. Подождите немного.' };
+    }
+    if (status === 404) {
+      return { code: 'model_unavailable', message: 'Такой модели нет в DeepSeek API.' };
+    }
+  }
 
   if (status === 401 || status === 403) {
     if (low.includes('gated') || low.includes('awaiting approval') ||
@@ -139,14 +173,19 @@ function parseRequest(payload) {
 
 /** Business-level checks -> reported as an SSE error event, like app.py. */
 function businessError(req, conf) {
-  if (!conf.token) {
+  if (!MODEL_ID_RE.test(req.model) && !DEEPSEEK_ID_RE.test(req.model)) {
     return {
-      code: 'no_token',
-      message: 'На сервере не задан HF_TOKEN. Добавьте его в секреты хостинга и перезапустите приложение.',
+      code: 'bad_model_id',
+      message: 'Некорректный Model ID. Формат: owner/name или deepseek:имя-модели',
     };
   }
-  if (!MODEL_ID_RE.test(req.model)) {
-    return { code: 'bad_model_id', message: 'Некорректный Model ID. Формат: owner/name' };
+  if (!routeFor(req.model, conf).key) {
+    return {
+      code: 'no_token',
+      message: req.model.startsWith(DEEPSEEK_PREFIX)
+        ? 'На сервере не задан ключ DeepSeek (DEEPSEEK_API_KEY).'
+        : 'На сервере не задан HF_TOKEN. Добавьте его в секреты хостинга и перезапустите приложение.',
+    };
   }
   if (req.messages.length > MAX_MESSAGES) {
     return { code: 'too_many_messages', message: 'Слишком длинная история чата.' };
@@ -157,8 +196,8 @@ function businessError(req, conf) {
   return null;
 }
 
-const payloadFor = (req, stream) => ({
-  model: req.model,
+const payloadFor = (req, stream, model) => ({
+  model: model || req.model,
   messages: req.messages,
   temperature: req.temperature,
   max_tokens: req.max_tokens,
@@ -186,16 +225,17 @@ function streamChat(req, conf, clientSignal) {
       const bizErr = businessError(req, conf);
       if (bizErr) { await send({ type: 'error', ...bizErr }); return; }
 
+      const dest = routeFor(req.model, conf);
       let resp;
       try {
-        resp = await fetch(`${conf.baseUrl}/chat/completions`, {
+        resp = await fetch(`${dest.baseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${conf.token}`,
+            Authorization: `Bearer ${dest.key}`,
             'Content-Type': 'application/json',
             Accept: 'text/event-stream',
           },
-          body: JSON.stringify(payloadFor(req, true)),
+          body: JSON.stringify(payloadFor(req, true, dest.model)),
           signal: guard.signal,
         });
       } catch (err) {
@@ -208,7 +248,7 @@ function streamChat(req, conf, clientSignal) {
 
       if (resp.status >= 400) {
         const body = await resp.text();
-        await send({ type: 'error', ...classifyHttpError(resp.status, body) });
+        await send({ type: 'error', ...classifyHttpError(resp.status, body, dest.provider) });
         return;
       }
 
@@ -285,13 +325,14 @@ async function completeOnce(req, conf) {
   const bizErr = businessError(req, conf);
   if (bizErr) return json({ error: bizErr }, bizErr.code === 'no_token' ? 503 : 400);
 
+  const dest = routeFor(req.model, conf);
   const guard = withTimeout(conf.timeout);
   let resp;
   try {
-    resp = await fetch(`${conf.baseUrl}/chat/completions`, {
+    resp = await fetch(`${dest.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${conf.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payloadFor(req, false)),
+      headers: { Authorization: `Bearer ${dest.key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payloadFor(req, false, dest.model)),
       signal: guard.signal,
     });
   } catch (err) {
@@ -306,7 +347,7 @@ async function completeOnce(req, conf) {
   guard.done();
 
   if (resp.status >= 400) {
-    return json({ error: classifyHttpError(resp.status, await resp.text()) }, resp.status);
+    return json({ error: classifyHttpError(resp.status, await resp.text(), dest.provider) }, resp.status);
   }
 
   const data = await resp.json();
@@ -320,11 +361,11 @@ async function completeOnce(req, conf) {
 /* ============== Featured models ============== */
 const baseId = (id) => String(id).split(':', 1)[0].trim().toLowerCase();
 
-async function fetchServedIds(conf) {
+async function fetchServedIds(baseUrl, key) {
   try {
     const guard = withTimeout(20000);
-    const resp = await fetch(`${conf.baseUrl}/models`, {
-      headers: { Authorization: `Bearer ${conf.token}` },
+    const resp = await fetch(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${key}` },
       signal: guard.signal,
     });
     guard.done();
@@ -342,13 +383,15 @@ async function fetchServedIds(conf) {
 }
 
 async function probeModel(conf, modelId) {
+  const dest = routeFor(modelId, conf);
+  if (!dest.key) return false;
   try {
     const guard = withTimeout(20000);
-    const resp = await fetch(`${conf.baseUrl}/chat/completions`, {
+    const resp = await fetch(`${dest.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${conf.token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${dest.key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: modelId,
+        model: dest.model,
         messages: [{ role: 'user', content: 'ping' }],
         max_tokens: 1,
         stream: false,
@@ -368,32 +411,36 @@ async function resolveFeatured(conf, force) {
   }
 
   const card = (entry, id, status) => ({
-    key: entry.key || '', name: entry.name || '', icon: entry.icon || '',
+    key: entry.key || '', provider: entry.provider || 'hf',
+    name: entry.name || '', icon: entry.icon || '',
     desc: entry.desc || '', type: entry.type || 'normal',
     id, status, candidates: entry.candidates || [],
   });
 
-  let result;
-  if (!conf.token) {
-    result = list.map((e) => card(e, (e.candidates || [])[0] || '', 'offline'));
-  } else {
-    const served = await fetchServedIds(conf);
+  // Ask each provider that has a key which models it serves. A provider with
+  // no key needs no call: its cards are offline by definition.
+  const listings = {
+    hf: conf.token ? await fetchServedIds(conf.baseUrl, conf.token) : null,
+    deepseek: conf.dsKey ? await fetchServedIds(conf.dsBaseUrl, conf.dsKey) : null,
+  };
+
+  const result = await Promise.all(list.map(async (entry) => {
+    const cands = entry.candidates || [];
+    const first = cands[0] || '';
+    if (!first || !routeFor(first, conf).key) return card(entry, first, 'offline');
+
+    const served = listings[entry.provider || 'hf'];
     if (served) {
-      result = list.map((entry) => {
-        const cands = entry.candidates || [];
-        const chosen = cands.find((c) => served.has(baseId(c)));
-        return card(entry, chosen || cands[0] || '', chosen ? 'online' : 'offline');
-      });
-    } else {
-      result = await Promise.all(list.map(async (entry) => {
-        const cands = (entry.candidates || []).slice(0, 2);
-        for (const cand of cands) {
-          if (await probeModel(conf, cand)) return card(entry, cand, 'online');
-        }
-        return card(entry, cands[0] || '', 'offline');
-      }));
+      const chosen = cands.find((c) => served.has(baseId(routeFor(c, conf).model)));
+      return card(entry, chosen || first, chosen ? 'online' : 'offline');
     }
-  }
+
+    // Listing unavailable - fall back to probing the top candidates.
+    for (const cand of cands.slice(0, 2)) {
+      if (await probeModel(conf, cand)) return card(entry, cand, 'online');
+    }
+    return card(entry, first, 'offline');
+  }));
 
   featuredCache = { at: now, data: result };
   return result;
@@ -422,7 +469,12 @@ export default {
     if (path === '/static/app.js') return asset('app.js');
 
     if (path === '/api/health') {
-      return json({ ok: true, token_configured: Boolean(conf.token), base_url: conf.baseUrl });
+      return json({
+        ok: true,
+        token_configured: Boolean(conf.token),
+        deepseek_configured: Boolean(conf.dsKey),
+        base_url: conf.baseUrl,
+      });
     }
     if (path === '/api/models') return json(MODELS);
     if (path === '/api/featured') {

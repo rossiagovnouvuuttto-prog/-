@@ -4,6 +4,7 @@
   "featured": [
     {
       "key": "deepseek",
+      "provider": "hf",
       "name": "DeepSeek",
       "icon": "⚡",
       "desc": "Код и рассуждения",
@@ -16,6 +17,7 @@
     },
     {
       "key": "qwen",
+      "provider": "hf",
       "name": "Qwen",
       "icon": "🔥",
       "desc": "Универсальный AI",
@@ -28,6 +30,7 @@
     },
     {
       "key": "llama",
+      "provider": "hf",
       "name": "Llama",
       "icon": "🌊",
       "desc": "Общение и тексты",
@@ -40,6 +43,7 @@
     },
     {
       "key": "mistral",
+      "provider": "hf",
       "name": "Mistral",
       "icon": "🌿",
       "desc": "Быстрые ответы",
@@ -48,6 +52,18 @@
         "mistralai/Mistral-7B-Instruct-v0.3",
         "mistralai/Mistral-Small-24B-Instruct-2501",
         "mistralai/Mixtral-8x7B-Instruct-v0.1"
+      ]
+    },
+    {
+      "key": "deepseek-api",
+      "provider": "deepseek",
+      "name": "DeepSeek API",
+      "icon": "🐋",
+      "desc": "Прямой ключ, без лимитов HF",
+      "type": "deepseek",
+      "candidates": [
+        "deepseek:deepseek-chat",
+        "deepseek:deepseek-reasoner"
       ]
     }
   ],
@@ -76,6 +92,23 @@
           "id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
           "name": "DeepSeek R1 Distill 32B",
           "desc": "Лёгкая дистилляция R1"
+        }
+      ]
+    },
+    {
+      "id": "deepseek-api",
+      "name": "DeepSeek API",
+      "icon": "🐋",
+      "models": [
+        {
+          "id": "deepseek:deepseek-chat",
+          "name": "DeepSeek Chat",
+          "desc": "Флагман V3 через официальный API"
+        },
+        {
+          "id": "deepseek:deepseek-reasoner",
+          "name": "DeepSeek Reasoner",
+          "desc": "Режим рассуждений R1"
         }
       ]
     },

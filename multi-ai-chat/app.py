@@ -13,7 +13,7 @@ import logging
 import os
 import pathlib
 import re
-from typing import Any, AsyncIterator, Literal
+from typing import Any, AsyncIterator, Literal, NamedTuple
 
 import httpx
 from fastapi import FastAPI
@@ -32,9 +32,33 @@ HF_TOKEN = (os.environ.get("HF_TOKEN") or "").strip()
 HF_BASE_URL = (os.environ.get("HF_BASE_URL") or "https://router.huggingface.co/v1").rstrip("/")
 HF_TIMEOUT = float(os.environ.get("HF_TIMEOUT") or 120)
 
+# DeepSeek's own API is OpenAI-compatible too, so it plugs into the same code
+# path - only the base URL and the key differ.
+DEEPSEEK_KEY = (os.environ.get("DEEPSEEK_API_KEY") or "").strip()
+DEEPSEEK_BASE_URL = (os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1").rstrip("/")
+DEEPSEEK_PREFIX = "deepseek:"
+
 # A Hugging Face Model ID looks like "owner/name" or, on the router, may carry
 # an explicit provider suffix such as "owner/name:together".
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._\-]+/[A-Za-z0-9._\-]+(:[A-Za-z0-9._\-]+)?$")
+# "deepseek:deepseek-chat" routes to DeepSeek instead.
+DEEPSEEK_ID_RE = re.compile(r"^deepseek:[A-Za-z0-9._\-]+$")
+
+
+class Route(NamedTuple):
+    """Where a request goes, and under whose key."""
+
+    provider: str
+    base_url: str
+    key: str
+    model: str
+
+
+def route_for(model_id: str) -> Route:
+    if model_id.startswith(DEEPSEEK_PREFIX):
+        return Route("deepseek", DEEPSEEK_BASE_URL, DEEPSEEK_KEY,
+                     model_id[len(DEEPSEEK_PREFIX):])
+    return Route("hf", HF_BASE_URL, HF_TOKEN, model_id)
 
 MAX_MESSAGES = 120
 MAX_CHARS = 120_000
@@ -87,9 +111,23 @@ def load_models() -> dict[str, Any]:
 MODEL_UNAVAILABLE = "Модель сейчас недоступна через Hugging Face Inference."
 
 
-def classify_http_error(status: int, body: str) -> ChatError:
-    """Map a Hugging Face HTTP response onto a friendly Russian message."""
+def classify_http_error(status: int, body: str, provider: str = "hf") -> ChatError:
+    """Map an upstream HTTP response onto a friendly Russian message."""
     low = body.lower()
+
+    if provider == "deepseek":
+        if status in (401, 403):
+            return ChatError("bad_token", "Неверный ключ DeepSeek. Проверьте его в настройках.", status)
+        if status == 402:
+            return ChatError(
+                "quota",
+                "Недостаточно средств на балансе DeepSeek. Пополните его на platform.deepseek.com.",
+                status,
+            )
+        if status == 429:
+            return ChatError("rate_limit", "Превышен лимит запросов DeepSeek. Подождите немного.", status)
+        if status == 404:
+            return ChatError("model_unavailable", "Такой модели нет в DeepSeek API.", status)
 
     if status in (401, 403):
         if "gated" in low or "awaiting approval" in low or "accept" in low and "license" in low:
@@ -152,9 +190,9 @@ def extract_hf_message(body: str) -> str:
 # --------------------------------------------------------------------------- #
 # Hugging Face plumbing
 # --------------------------------------------------------------------------- #
-def build_payload(req: ChatRequest, stream: bool) -> dict[str, Any]:
+def build_payload(req: ChatRequest, stream: bool, model: str | None = None) -> dict[str, Any]:
     return {
-        "model": req.model,
+        "model": model or req.model,
         "messages": [m.model_dump() for m in req.messages],
         "temperature": req.temperature,
         "max_tokens": req.max_tokens,
@@ -167,51 +205,56 @@ def sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
-def validate(req: ChatRequest) -> None:
-    if not HF_TOKEN:
-        raise ChatError(
-            "no_token",
-            "На сервере не задан HF_TOKEN. Добавьте его в секреты хостинга и перезапустите приложение.",
-            503,
-        )
-    if not MODEL_ID_RE.match(req.model):
+def validate(req: ChatRequest) -> Route:
+    if not (MODEL_ID_RE.match(req.model) or DEEPSEEK_ID_RE.match(req.model)):
         raise ChatError(
             "bad_model_id",
-            "Некорректный Model ID. Формат: owner/name",
+            "Некорректный Model ID. Формат: owner/name или deepseek:имя-модели",
             400,
+        )
+    dest = route_for(req.model)
+    if not dest.key:
+        raise ChatError(
+            "no_token",
+            "На сервере не задан ключ DeepSeek (DEEPSEEK_API_KEY)."
+            if dest.provider == "deepseek"
+            else "На сервере не задан HF_TOKEN. Добавьте его в секреты хостинга и перезапустите приложение.",
+            503,
         )
     if len(req.messages) > MAX_MESSAGES:
         raise ChatError("too_many_messages", "Слишком длинная история чата.", 413)
     if sum(len(m.content) for m in req.messages) > MAX_CHARS:
         raise ChatError("too_long", "Слишком длинный запрос.", 413)
+    return dest
 
 
 async def stream_chat(req: ChatRequest) -> AsyncIterator[str]:
     """Proxy a streaming completion, re-framed as our own SSE envelope."""
     try:
-        validate(req)
+        dest = validate(req)
     except ChatError as err:
         yield sse({"type": "error", "code": err.code, "message": err.message})
         return
 
     headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
+        "Authorization": f"Bearer {dest.key}",
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
     }
-    url = f"{HF_BASE_URL}/chat/completions"
+    url = f"{dest.base_url}/chat/completions"
     produced = False
 
     try:
         timeout = httpx.Timeout(HF_TIMEOUT, connect=30.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
-                "POST", url, headers=headers, json=build_payload(req, True)
+                "POST", url, headers=headers, json=build_payload(req, True, dest.model)
             ) as resp:
                 if resp.status_code >= 400:
                     body = (await resp.aread()).decode("utf-8", "replace")
-                    err = classify_http_error(resp.status_code, body)
-                    log.warning("HF %s for %s: %s", resp.status_code, req.model, body[:300])
+                    err = classify_http_error(resp.status_code, body, dest.provider)
+                    log.warning("%s %s for %s: %s", dest.provider, resp.status_code,
+                                req.model, body[:300])
                     yield sse({"type": "error", "code": err.code, "message": err.message})
                     return
 
@@ -290,21 +333,22 @@ async def stream_chat(req: ChatRequest) -> AsyncIterator[str]:
 
 async def complete_once(req: ChatRequest) -> dict[str, Any]:
     """Non-streaming completion, used when the client asks for stream=false."""
-    validate(req)
-    headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
-    url = f"{HF_BASE_URL}/chat/completions"
+    dest = validate(req)
+    headers = {"Authorization": f"Bearer {dest.key}", "Content-Type": "application/json"}
+    url = f"{dest.base_url}/chat/completions"
     timeout = httpx.Timeout(HF_TIMEOUT, connect=30.0)
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, headers=headers, json=build_payload(req, False))
+            resp = await client.post(url, headers=headers,
+                                     json=build_payload(req, False, dest.model))
     except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout):
         raise ChatError("timeout", "Время ожидания ответа истекло.", 504)
     except httpx.HTTPError:
         raise ChatError("network", "Ошибка сети при обращении к Hugging Face.", 502)
 
     if resp.status_code >= 400:
-        raise classify_http_error(resp.status_code, resp.text)
+        raise classify_http_error(resp.status_code, resp.text, dest.provider)
 
     data = resp.json()
     choices = data.get("choices") or []
@@ -333,11 +377,13 @@ def _base_id(model_id: str) -> str:
     return model_id.split(":", 1)[0].strip().lower()
 
 
-async def fetch_served_ids(client: httpx.AsyncClient) -> set[str] | None:
-    """Model IDs the router currently serves, or None if the listing failed."""
+async def fetch_served_ids(client: httpx.AsyncClient,
+                           base_url: str = "", key: str = "") -> set[str] | None:
+    """Model IDs the provider currently serves, or None if the listing failed."""
     try:
         resp = await client.get(
-            f"{HF_BASE_URL}/models", headers={"Authorization": f"Bearer {HF_TOKEN}"}
+            f"{base_url or HF_BASE_URL}/models",
+            headers={"Authorization": f"Bearer {key or HF_TOKEN}"},
         )
         if resp.status_code >= 400:
             log.warning("model listing returned %s", resp.status_code)
@@ -361,12 +407,15 @@ async def fetch_served_ids(client: httpx.AsyncClient) -> set[str] | None:
 
 async def probe_model(client: httpx.AsyncClient, model_id: str) -> bool:
     """Cheapest possible call that still proves the model answers."""
+    dest = route_for(model_id)
+    if not dest.key:
+        return False
     try:
         resp = await client.post(
-            f"{HF_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"},
+            f"{dest.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {dest.key}", "Content-Type": "application/json"},
             json={
-                "model": model_id,
+                "model": dest.model,
                 "messages": [{"role": "user", "content": "ping"}],
                 "max_tokens": 1,
                 "stream": False,
@@ -388,6 +437,7 @@ async def resolve_featured(force: bool = False) -> list[dict[str, Any]]:
     def card(entry: dict[str, Any], model_id: str, status: str) -> dict[str, Any]:
         return {
             "key": entry.get("key", ""),
+            "provider": entry.get("provider", "hf"),
             "name": entry.get("name", ""),
             "icon": entry.get("icon", ""),
             "desc": entry.get("desc", ""),
@@ -397,32 +447,33 @@ async def resolve_featured(force: bool = False) -> list[dict[str, Any]]:
             "candidates": entry.get("candidates") or [],
         }
 
-    if not HF_TOKEN:
-        result = [card(e, (e.get("candidates") or [""])[0], "offline") for e in cfg]
-        _featured_cache.update(at=now, data=result)
-        return result
-
     timeout = httpx.Timeout(20.0, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        served = await fetch_served_ids(client)
+        # Ask each provider that has a key which models it serves. A provider
+        # with no key needs no call: its cards are offline by definition.
+        listings: dict[str, set[str] | None] = {}
+        for provider, base, key in (("hf", HF_BASE_URL, HF_TOKEN),
+                                    ("deepseek", DEEPSEEK_BASE_URL, DEEPSEEK_KEY)):
+            listings[provider] = await fetch_served_ids(client, base, key) if key else None
 
-        if served is not None:
-            result = []
-            for entry in cfg:
-                cands = entry.get("candidates") or []
-                chosen = next((c for c in cands if _base_id(c) in served), None)
-                result.append(card(entry, chosen or (cands[0] if cands else ""),
-                                   "online" if chosen else "offline"))
-        else:
+        async def resolve_one(entry: dict[str, Any]) -> dict[str, Any]:
+            cands = entry.get("candidates") or []
+            first = cands[0] if cands else ""
+            if not first or not route_for(first).key:
+                return card(entry, first, "offline")
+
+            served = listings.get(entry.get("provider", "hf"))
+            if served:
+                chosen = next((c for c in cands if _base_id(route_for(c).model) in served), None)
+                return card(entry, chosen or first, "online" if chosen else "offline")
+
             # Listing unavailable - fall back to probing the top candidates.
-            async def resolve_one(entry: dict[str, Any]) -> dict[str, Any]:
-                cands = (entry.get("candidates") or [])[:2]
-                for cand in cands:
-                    if await probe_model(client, cand):
-                        return card(entry, cand, "online")
-                return card(entry, cands[0] if cands else "", "offline")
+            for cand in cands[:2]:
+                if await probe_model(client, cand):
+                    return card(entry, cand, "online")
+            return card(entry, first, "offline")
 
-            result = list(await asyncio.gather(*(resolve_one(e) for e in cfg)))
+        result = list(await asyncio.gather(*(resolve_one(e) for e in cfg)))
 
     _featured_cache.update(at=now, data=result)
     return result
@@ -439,7 +490,12 @@ async def featured(refresh: bool = False) -> dict[str, Any]:
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     # Reports only whether a token exists - never the token itself.
-    return {"ok": True, "token_configured": bool(HF_TOKEN), "base_url": HF_BASE_URL}
+    return {
+        "ok": True,
+        "token_configured": bool(HF_TOKEN),
+        "deepseek_configured": bool(DEEPSEEK_KEY),
+        "base_url": HF_BASE_URL,
+    }
 
 
 @app.get("/api/models")

@@ -108,6 +108,65 @@ async def models():
     return {"object": "list", "data": [{"id": m, "object": "model"} for m in sorted(SERVED)]}
 
 
+# ---------------------------------------------------------------------------
+# DeepSeek's own API, served under /ds/v1 so one process stands in for both
+# providers. It wants an "sk-" key, which is how a mixed-up key is caught.
+# ---------------------------------------------------------------------------
+DS_SERVED = {"deepseek-chat", "deepseek-reasoner"}
+
+
+@app.get("/ds/v1/models")
+async def ds_models():
+    if os.environ.get("MOCK_DS_NO_LISTING"):
+        return JSONResponse(status_code=500, content={"error": {"message": "listing down"}})
+    return {"object": "list", "data": [{"id": m, "object": "model"} for m in sorted(DS_SERVED)]}
+
+
+@app.post("/ds/v1/chat/completions")
+async def ds_completions(request: Request):
+    body = await request.json()
+    model = body.get("model", "")
+    auth = request.headers.get("authorization", "")
+
+    if not auth.startswith("Bearer sk-"):
+        return JSONResponse(status_code=401, content={"error": {"message": "Invalid API key"}})
+    if os.environ.get("MOCK_DS_NO_BALANCE"):
+        return JSONResponse(status_code=402, content={"error": {"message": "Insufficient Balance"}})
+    if model not in DS_SERVED:
+        return JSONResponse(status_code=404, content={"error": {"message": "Model Not Exist"}})
+
+    if not body.get("stream"):
+        return {
+            "choices": [{"message": {"role": "assistant", "content": ANSWER}}],
+            "usage": {"prompt_tokens": 9, "completion_tokens": 240, "total_tokens": 249},
+        }
+    return StreamingResponse(stream_answer(model), media_type="text/event-stream")
+
+
+async def stream_answer(model: str):
+    """The streamed reply shared by both providers."""
+    if model == "mock/empty":
+        yield "data: [DONE]\n\n"
+        return
+
+    if model == "mock/reasoning":
+        for piece in ["Думаю над ответом. ", "Проверяю факты. "]:
+            yield chunk({"reasoning_content": piece})
+            await asyncio.sleep(0.01)
+
+    step = 24
+    for i in range(0, len(ANSWER), step):
+        yield chunk({"content": ANSWER[i:i + step]})
+        await asyncio.sleep(0.5 if model == "mock/slow" else 0.005)
+
+        if model == "mock/midstream" and i >= step * 2:
+            yield f"data: {json.dumps({'error': {'message': 'Upstream provider exploded'}})}\n\n"
+            return
+
+    yield f"data: {json.dumps({'usage': {'total_tokens': 252}})}\n\n"
+    yield "data: [DONE]\n\n"
+
+
 @app.post("/v1/chat/completions")
 async def completions(request: Request):
     body = await request.json()
@@ -132,27 +191,4 @@ async def completions(request: Request):
             "usage": {"prompt_tokens": 12, "completion_tokens": 240, "total_tokens": 252},
         }
 
-    async def gen():
-        if model == "mock/empty":
-            yield "data: [DONE]\n\n"
-            return
-
-        if model == "mock/reasoning":
-            for piece in ["Думаю над ответом. ", "Проверяю факты. "]:
-                yield chunk({"reasoning_content": piece})
-                await asyncio.sleep(0.01)
-
-        text = ANSWER
-        step = 24
-        for i in range(0, len(text), step):
-            yield chunk({"content": text[i:i + step]})
-            await asyncio.sleep(0.5 if model == "mock/slow" else 0.005)
-
-            if model == "mock/midstream" and i >= step * 2:
-                yield f"data: {json.dumps({'error': {'message': 'Upstream provider exploded'}})}\n\n"
-                return
-
-        yield f"data: {json.dumps({'usage': {'total_tokens': 252}})}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    return StreamingResponse(stream_answer(model), media_type="text/event-stream")

@@ -144,6 +144,14 @@
       </div>
 
       <div class="field">
+        <label for="deepseekKey">Ключ DeepSeek <span class="tag-opt">необязательно</span></label>
+        <input type="password" id="deepseekKey" placeholder="sk-..." autocomplete="off" spellcheck="false">
+        <p class="hint">Для карточки «DeepSeek API». Работает в обход лимитов Hugging Face, но API платный.
+          <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">Получить ключ</a>
+        </p>
+      </div>
+
+      <div class="field">
         <label for="systemPrompt">System Prompt</label>
         <textarea id="systemPrompt" rows="4" placeholder="Ты полезный ассистент. Отвечай на русском языке."></textarea>
         <p class="hint">Задаёт характер и правила ответа модели.</p>
