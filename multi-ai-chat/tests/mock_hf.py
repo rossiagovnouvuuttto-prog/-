@@ -23,9 +23,19 @@ import json
 import os
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI()
+
+# The Chrome extension calls this from its own origin, so the stand-in has
+# to answer preflights the way the real router does.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 ANSWER = """# Ответ модели
 

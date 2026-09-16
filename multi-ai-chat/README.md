@@ -69,6 +69,8 @@ Mistral  : Mistral-7B-Instruct-v0.3 → Mistral-Small-24B-Instruct-2501 → Mixt
 | --- | --- |
 | Hugging Face Space | Settings → Variables and secrets → **New secret** → `HF_TOKEN` |
 | GitHub Actions (автодеплой) | Settings → Secrets and variables → Actions → `HF_TOKEN` |
+| Cloudflare Worker | Settings → Variables and Secrets → тип **Secret** → `HF_TOKEN` |
+| Расширение Chrome | Настройки в самом чате → поле «Токен Hugging Face» (хранилище браузера) |
 | Локально | `export HF_TOKEN=hf_...` или файл `.env` (см. `.env.example`) |
 
 Токен не попадает ни в HTML, ни в JavaScript, ни в репозиторий. Проверка:
@@ -119,6 +121,28 @@ uvicorn app:app --reload --port 7860
 ```bash
 docker build -t multi-ai-chat .
 docker run -p 7860:7860 -e HF_TOKEN=hf_... multi-ai-chat
+```
+
+## Расширение для Chrome (без хостинга вообще)
+
+Третья сборка: тот же чат как расширение браузера. Ни аккаунтов, ни деплоя —
+работает локально, токен хранится в хранилище расширения.
+
+1. Распакуйте `multi-ai-chat-extension.zip`.
+2. Откройте `chrome://extensions`, включите **Режим разработчика** справа вверху.
+3. **Загрузить распакованное расширение** → выберите распакованную папку.
+4. Нажмите на иконку покебола на панели → откроется чат.
+5. **Настройки** → поле **Токен Hugging Face** → вставьте токен.
+
+`static/app.js` и `static/styles.css` копируются из `static/` без единого
+изменения, поэтому интерфейс тот же. Роль backend играет `static/api.js`: он
+перехватывает те же запросы `/api/*` прямо в странице и сам ходит в Hugging Face.
+`app.js` по-прежнему вызывает `fetch('/api/chat')` и токена не видит.
+
+Пересборка после правок в `static/`:
+
+```bash
+python3 extension/build_extension.py
 ```
 
 ## Публикация на Cloudflare Workers (без Git и без оплаты)
@@ -199,6 +223,13 @@ HF_TOKEN=hf_fake HF_BASE_URL=http://127.0.0.1:8899/v1 uvicorn app:app --port 880
 
 python3 tests/test_backend.py    # API, стриминг, карта ошибок, отсутствие утечки токена
 python3 tests/test_frontend.py   # реальный Chromium: UI, Markdown, история, адаптив
+python3 tests/test_extension.py  # расширение, загруженное в настоящий Chromium
+```
+
+Обе первые сюиты принимают `APP_URL`, поэтому ими же проверяется и Worker:
+
+```bash
+APP_URL=http://127.0.0.1:8790 python3 tests/test_backend.py
 ```
 
 ## Структура
@@ -213,4 +244,7 @@ tests/              mock Hugging Face + проверки backend и браузе
 Dockerfile          образ для Docker-хостинга (порт из $PORT, иначе 7860)
 worker/worker_src.js тот же backend на JavaScript для Cloudflare Workers
 worker/build_worker.py собирает worker.js: backend + вшитый фронтенд одним файлом
+extension/         расширение Chrome: manifest, фоновый скрипт, иконки
+extension/static/api.js  backend внутри страницы: перехватывает /api/* и ходит в HF
+extension/build_extension.py собирает расширение из общих static/ и models.json
 ```
