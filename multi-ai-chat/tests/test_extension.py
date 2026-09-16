@@ -94,13 +94,18 @@ with sync_playwright() as pw:
     check("token field is masked", page.get_attribute("#hfToken", "type") == "password")
     page.screenshot(path=str(SHOTS / "E2-settings.png"))
 
+    # Point the shim at the stand-in router first, so the refresh that entering
+    # a token triggers can be observed. A user never touches this setting.
+    page.evaluate("base => chrome.storage.local.set({ hfBaseUrl: base })", MOCK_BASE)
+
     page.fill("#hfToken", FAKE_TOKEN)
-    page.wait_for_timeout(700)
+    page.wait_for_timeout(2500)
     stored = page.evaluate("async () => (await chrome.storage.local.get(['hfToken'])).hfToken")
     check("token saved to extension storage", stored == FAKE_TOKEN, str(stored))
 
-    # Point the shim at the stand-in router the same way a user never would.
-    page.evaluate("base => chrome.storage.local.set({ hfBaseUrl: base })", MOCK_BASE)
+    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(4)]
+    check("cards go live without a page reload", live.count("Online") == 3, str(live))
+
     page.click("#settingsModal [data-close]")
     page.reload(wait_until="networkidle")
 

@@ -91,10 +91,17 @@
       }
       return {
         code: 'bad_token',
-        message: 'Неверный или просроченный токен Hugging Face. Проверьте его в «Настройках».',
+        message: 'Токен Hugging Face не подошёл. Нужен токен с правом Inference: '
+               + 'создайте его заново на huggingface.co/settings/tokens и вставьте в «Настройки».',
       };
     }
     if (status === 404) return { code: 'model_unavailable', message: MODEL_UNAVAILABLE };
+    if (status === 402) {
+      return {
+        code: 'quota',
+        message: 'Исчерпан бесплатный лимит Hugging Face на этом аккаунте. Он обновляется ежемесячно.',
+      };
+    }
     if (status === 429) {
       return {
         code: 'rate_limit',
@@ -425,8 +432,17 @@
       clearTimeout(timer);
       timer = setTimeout(async () => {
         await store.set({ hfToken: field.value.trim() });
-        featuredCache = { at: 0, data: null };   // re-check which models are live
-      }, 400);
+        featuredCache = { at: 0, data: null };
+
+        // app.js declares these at top level of a classic script, so they are
+        // on window. Re-checking here means the cards flip to Online as soon
+        // as a working token is pasted, with no page reload.
+        if (typeof window.loadFeatured === 'function') {
+          await window.loadFeatured();
+          if (typeof window.renderStarters === 'function') window.renderStarters();
+          if (typeof window.checkHealth === 'function') window.checkHealth();
+        }
+      }, 500);
     });
   });
 })();
