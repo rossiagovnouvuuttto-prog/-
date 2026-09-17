@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#06060d">
+<meta name="color-scheme" content="dark">
+<title>PromptAI — генератор промптов для AI-изображений</title>
+<meta name="description" content="Опишите свою идею на русском — PromptAI превратит её в профессиональный английский промпт для Midjourney, Stable Diffusion, DALL·E и других генераторов изображений.">
+<meta property="og:title" content="PromptAI — генератор промптов для AI-изображений">
+<meta property="og:description" content="Опишите свою идею, а AI создаст профессиональный промпт.">
+<meta property="og:type" content="website">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%237c5cff'/><stop offset='1' stop-color='%2321d4fd'/></linearGradient></defs><rect width='64' height='64' rx='16' fill='%230a0a14'/><path d='M32 12l4.6 11.6L48 28l-11.4 4.4L32 44l-4.6-11.6L16 28l11.4-4.4z' fill='url(%23g)'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+
+<div class="aurora" aria-hidden="true">
+  <span class="aurora__blob aurora__blob--1"></span>
+  <span class="aurora__blob aurora__blob--2"></span>
+  <span class="aurora__blob aurora__blob--3"></span>
+  <span class="aurora__grid"></span>
+</div>
+
+<!-- ─────────────────────────  HEADER  ───────────────────────── -->
+<header class="header" id="header">
+  <div class="container header__inner">
+    <a class="logo" href="#top" aria-label="PromptAI — на главную">
+      <span class="logo__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.1 5.4L19.5 10.5l-5.4 2.1L12 18l-2.1-5.4L4.5 10.5l5.4-2.1z" fill="currentColor"/></svg>
+      </span>
+      <span class="logo__text">Prompt<span class="grad-text">AI</span></span>
+    </a>
+
+    <nav class="nav" id="nav" aria-label="Основная навигация">
+      <a class="nav__link" href="#generator" data-close-menu>Генератор</a>
+      <a class="nav__link" href="#library" data-close-menu>Библиотека</a>
+      <a class="nav__link" href="#pricing" data-close-menu>Тарифы</a>
+      <a class="nav__link" href="#faq" data-close-menu>FAQ</a>
+    </nav>
+
+    <div class="header__actions">
+      <button class="quota" id="quotaBadge" type="button" title="Осталось генераций">
+        <span class="quota__dot" aria-hidden="true"></span>
+        <span class="quota__value" id="quotaValue">—</span>
+      </button>
+      <button class="btn btn--ghost btn--sm" id="accountBtn" type="button">Войти</button>
+      <button class="burger" id="burger" type="button" aria-label="Меню" aria-expanded="false" aria-controls="nav">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ─────────────────────────  HERO  ───────────────────────── -->
+  <section class="hero" id="generator">
+    <div class="container hero__inner">
+
+      <div class="badge reveal" data-reveal>
+        <span class="badge__pulse" aria-hidden="true"></span>
+        Промпт-инженер на базе AI
+      </div>
+
+      <h1 class="hero__title reveal" data-reveal>
+        Создай идеальный промпт<br class="only-desktop">
+        <span class="grad-text nowrap">для AI-изображения</span>
+      </h1>
+
+      <p class="hero__subtitle reveal" data-reveal>
+        Опишите свою идею, а AI создаст профессиональный промпт
+      </p>
+
+      <!-- Генератор -->
+      <div class="composer reveal" data-reveal>
+        <form id="promptForm" class="composer__form" autocomplete="off">
+          <div class="composer__field">
+            <label class="sr-only" for="ideaInput">Описание изображения</label>
+            <textarea
+              id="ideaInput"
+              class="composer__input"
+              rows="3"
+              maxlength="600"
+              placeholder="Опишите изображение..."
+              required></textarea>
+
+            <div class="composer__meta">
+              <button class="chip chip--ghost" type="button" id="diceBtn" title="Случайная идея">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg>
+                Случайная идея
+              </button>
+              <span class="composer__counter"><span id="charCount">0</span>/600</span>
+            </div>
+          </div>
+
+          <button class="btn btn--primary btn--lg composer__submit" type="submit" id="generateBtn">
+            <span class="btn__label">Создать промпт</span>
+            <span class="btn__spinner" aria-hidden="true"></span>
+          </button>
+        </form>
+
+        <p class="composer__hint">
+          Пишите на русском или английском — AI сам переведёт и структурирует описание.
+        </p>
+      </div>
+
+      <!-- Выбор стиля -->
+      <div class="block reveal" data-reveal>
+        <div class="block__head">
+          <h2 class="block__title">Выберите стиль</h2>
+          <button class="link-btn" type="button" id="resetStyleBtn">Сбросить</button>
+        </div>
+        <div class="styles" id="styleGrid" role="radiogroup" aria-label="Стиль изображения"></div>
+      </div>
+
+      <!-- Настройки -->
+      <div class="block reveal" data-reveal>
+        <div class="block__head">
+          <h2 class="block__title">Настройки</h2>
+          <button class="link-btn" type="button" id="resetSettingsBtn">По умолчанию</button>
+        </div>
+        <div class="settings" id="settingsGrid"></div>
+      </div>
+
+      <!-- Результат -->
+      <div id="resultZone" class="result-zone" aria-live="polite"></div>
+
+    </div>
+  </section>
+
+  <!-- ─────────────────────────  LIBRARY  ───────────────────────── -->
+  <section class="section" id="library">
+    <div class="container">
+      <div class="section__head reveal" data-reveal>
+        <div>
+          <span class="eyebrow">Библиотека</span>
+          <h2 class="section__title">История и избранное</h2>
+          <p class="section__lead">Все ваши промпты сохраняются на устройстве и доступны в один клик.</p>
+        </div>
+      </div>
+
+      <div class="tabs reveal" data-reveal>
+        <div class="tabs__list" role="tablist">
+          <button class="tab is-active" role="tab" data-tab="history" aria-selected="true">
+            История <span class="tab__count" id="historyCount">0</span>
+          </button>
+          <button class="tab" role="tab" data-tab="favorites" aria-selected="false">
+            Избранное <span class="tab__count" id="favoritesCount">0</span>
+          </button>
+        </div>
+        <button class="link-btn link-btn--danger" type="button" id="clearHistoryBtn">Очистить историю</button>
+      </div>
+
+      <div class="library" id="libraryList"></div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────  FEATURES  ───────────────────────── -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="section__head reveal" data-reveal>
+        <div>
+          <span class="eyebrow">Возможности</span>
+          <h2 class="section__title">Всё для идеального кадра</h2>
+          <p class="section__lead">PromptAI собирает промпт по профессиональной структуре и доводит его до результата.</p>
+        </div>
+      </div>
+      <div class="features" id="featureGrid"></div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────  PRICING  ───────────────────────── -->
+  <section class="section" id="pricing">
+    <div class="container">
+      <div class="section__head reveal" data-reveal>
+        <div>
+          <span class="eyebrow">Тарифы</span>
+          <h2 class="section__title">Начните бесплатно</h2>
+          <p class="section__lead">Бесплатного лимита хватит, чтобы почувствовать разницу. Premium снимает все ограничения.</p>
+        </div>
+      </div>
+      <div class="pricing" id="pricingGrid"></div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────  FAQ  ───────────────────────── -->
+  <section class="section" id="faq">
+    <div class="container container--narrow">
+      <div class="section__head reveal" data-reveal>
+        <div>
+          <span class="eyebrow">FAQ</span>
+          <h2 class="section__title">Частые вопросы</h2>
+        </div>
+      </div>
+      <div class="faq" id="faqList"></div>
+    </div>
+  </section>
+
+  <section class="cta reveal" data-reveal>
+    <div class="container">
+      <div class="cta__card">
+        <h2 class="cta__title">Опишите идею — остальное сделает AI</h2>
+        <p class="cta__text">Один клик отделяет вашу мысль от промпта профессионального уровня.</p>
+        <a class="btn btn--primary btn--lg" href="#generator">Создать промпт</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="container footer__inner">
+    <div class="footer__brand">
+      <span class="logo__mark logo__mark--sm" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.1 5.4L19.5 10.5l-5.4 2.1L12 18l-2.1-5.4L4.5 10.5l5.4-2.1z" fill="currentColor"/></svg>
+      </span>
+      <div>
+        <p class="footer__name">Prompt<span class="grad-text">AI</span></p>
+        <p class="footer__tag">Промпт-инженер для генераторов изображений</p>
+      </div>
+    </div>
+    <nav class="footer__links" aria-label="Footer">
+      <a href="#generator">Генератор</a>
+      <a href="#library">Библиотека</a>
+      <a href="#pricing">Тарифы</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <p class="footer__copy">© <span id="year"></span> PromptAI</p>
+  </div>
+</footer>
+
+<!-- Мобильная плавающая кнопка -->
+<button class="fab" id="fabTop" type="button" aria-label="К генератору">
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+</button>
+
+<!-- Модальные окна и уведомления -->
+<div class="modal-root" id="modalRoot" hidden></div>
+<div class="toast-root" id="toastRoot" aria-live="polite" aria-atomic="true"></div>
+
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

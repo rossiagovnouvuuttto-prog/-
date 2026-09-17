@@ -1,0 +1,20 @@
+{
+  "name": "PromptAI — генератор промптов для AI-изображений",
+  "short_name": "PromptAI",
+  "description": "Опишите идею, а AI создаст профессиональный промпт для генераторов изображений.",
+  "lang": "ru",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#06060d",
+  "theme_color": "#06060d",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
