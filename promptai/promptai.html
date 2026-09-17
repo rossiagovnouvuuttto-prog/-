@@ -4029,8 +4029,12 @@ function openAuthModal(mode = 'login') {
         openAuthModal(isLogin ? 'register' : 'login');
       });
 
-      modal.querySelector('#authForm').addEventListener('submit', async (event) => {
+      let pending = false;
+
+      const submitAuth = async (event) => {
         event.preventDefault();
+        if (pending) return;
+        pending = true;
 
         const email = modal.querySelector('#authEmail').value;
         const password = modal.querySelector('#authPassword').value;
@@ -4049,8 +4053,13 @@ function openAuthModal(mode = 'login') {
         } catch (error) {
           errorNode.textContent = error.message;
           setLoading(submit, false);
+          pending = false;
         }
-      });
+      };
+
+      // Как и в генераторе: клик по кнопке — основной путь, submit — запасной.
+      modal.querySelector('#authSubmit').addEventListener('click', submitAuth);
+      modal.querySelector('#authForm').addEventListener('submit', submitAuth);
     },
   });
 }
@@ -4115,10 +4124,17 @@ function bindComposer() {
   const input = $('#ideaInput');
   const counter = $('#charCount');
 
-  $('#promptForm').addEventListener('submit', (event) => {
+  // Отправка формы блокируется, если страница открыта внутри песочницы
+  // (iframe c sandbox без allow-forms) — событие submit туда просто не доходит.
+  // Поэтому основной путь запуска — клик по кнопке, а submit оставлен
+  // запасным для клавиатуры.
+  const start = (event) => {
     event.preventDefault();
     generate();
-  });
+  };
+
+  $('#generateBtn').addEventListener('click', start);
+  $('#promptForm').addEventListener('submit', start);
 
   input.addEventListener('input', () => {
     counter.textContent = input.value.length;
