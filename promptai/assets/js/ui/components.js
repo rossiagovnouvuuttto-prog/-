@@ -98,7 +98,12 @@ export function resultCard(entry, { isFavorite = false } = {}) {
         <button class="btn" type="button" data-action="translate">
           <span class="btn__label">${icon('globe')} Перевести на английский</span><span class="btn__spinner"></span>
         </button>
+        <button class="btn" type="button" data-action="translate-ru">
+          <span class="btn__label">${icon('translate')} Перевести на русский</span><span class="btn__spinner"></span>
+        </button>
       </div>
+
+      <div class="translation" id="translationBox" hidden></div>
 
       <div class="result__actions" style="grid-template-columns: 1fr 1fr; margin-top: 8px;">
         <button class="btn btn--sm" type="button" data-action="favorite">
@@ -109,6 +114,18 @@ export function resultCard(entry, { isFavorite = false } = {}) {
 
       <div class="variants" id="variantList"></div>
     </article>`;
+}
+
+/** Блок с русским переводом промпта. */
+export function translationCard(text) {
+  return `
+    <div class="translation__inner">
+      <p class="translation__head">${icon('translate')} Что написано в промпте</p>
+      <p class="translation__text">${escapeHtml(text)}</p>
+      <p class="translation__note">
+        Это перевод для понимания. Промпт остаётся английским — кнопка «Копировать» копирует именно его.
+      </p>
+    </div>`;
 }
 
 export function variantCard(variant) {

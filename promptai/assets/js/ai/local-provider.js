@@ -6,6 +6,7 @@
 import { AI } from '../config.js';
 import { buildPrompt, buildVariants, enhancePrompt } from '../engine/prompt-builder.js';
 import { translatePrompt, translateToEnglish } from '../engine/translator.js';
+import { translateToRussian } from '../engine/ru-translator.js';
 import { randomInt, sleep } from '../utils.js';
 
 /** Небольшая задержка, чтобы интерфейс вёл себя так же, как с реальным API. */
@@ -37,6 +38,12 @@ export const localProvider = {
   async translate({ text }) {
     await think();
     return { text: translatePrompt(text), source: 'local' };
+  },
+
+  /** Обратный перевод: показать пользователю, что написано в промпте. */
+  async translateRu({ text, idea }) {
+    await think();
+    return { text: translateToRussian(text, { idea }), source: 'local' };
   },
 
   /** Перевод описания пользователя — используется до сборки промпта. */

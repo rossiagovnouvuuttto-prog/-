@@ -15,7 +15,7 @@ import { maxVariants, quota, spendGeneration } from './quota.js';
 import { store } from './store.js';
 import {
   emptyState, faqItems, featureCards, libraryEntry, pricingCards,
-  resultCard, settingGroups, skeleton, styleCards, variantCard,
+  resultCard, settingGroups, skeleton, styleCards, translationCard, variantCard,
 } from './ui/components.js';
 import { icon } from './ui/icons.js';
 import { closeModal, openModal } from './ui/modal.js';
@@ -194,6 +194,36 @@ async function translateCurrent(button) {
     store.updateHistory(state.entry.id, { prompt: state.entry.prompt, multiline: state.entry.multiline });
     renderResult();
     toast('Промпт переведён на английский', 'success');
+  } catch {
+    toast('Не удалось перевести промпт', 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+/**
+ * Показывает русский перевод промпта под карточкой.
+ * Сам промпт не меняется: копируется и уходит в генератор английский текст.
+ */
+async function showRussian(button) {
+  if (!state.entry) return;
+
+  const box = $('#translationBox');
+  if (!box) return;
+
+  // Повторное нажатие сворачивает перевод.
+  if (!box.hidden) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+
+  setLoading(button, true);
+
+  try {
+    const { text } = await ai.translateRu({ text: state.entry.multiline || state.entry.prompt, idea: state.entry.idea });
+    box.innerHTML = translationCard(text);
+    box.hidden = false;
   } catch {
     toast('Не удалось перевести промпт', 'error');
   } finally {
@@ -543,6 +573,7 @@ function bindResultActions() {
       case 'improve':   improvePrompt(trigger); break;
       case 'variants':  makeVariants(trigger); break;
       case 'translate': translateCurrent(trigger); break;
+      case 'translate-ru': showRussian(trigger); break;
       case 'regenerate': generate(state.entry.idea); break;
       case 'open-account': openAccountModal(); break;
       case 'favorite': {

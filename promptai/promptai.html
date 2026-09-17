@@ -764,10 +764,63 @@ img, svg { display: block; max-width: 100%; }
   gap: 8px;
   margin-top: 14px;
 }
-.result__actions .btn { padding: 11px 10px; font-size: .84rem; }
+.result__actions .btn {
+  /* Узкие поля и небольшой отступ у иконки: на экранах 320px подписи вроде
+     «В избранное» иначе не помещаются в половину ширины. */
+  gap: 6px;
+  padding: 11px 8px;
+  font-size: .84rem;
+  /* Длинные подписи вроде «Перевести на английский» переносятся, а не обрезаются. */
+  white-space: normal;
+}
+.result__actions .btn__label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  line-height: 1.3;
+}
 .result__actions .btn--copy { grid-column: 1 / -1; }
 
 .result__actions .btn svg { width: 16px; height: 16px; }
+
+/* Перевод промпта на русский */
+.translation {
+  margin-top: 12px;
+  animation: rise .35s var(--ease) both;
+}
+.translation[hidden] { display: none; }
+
+.translation__inner {
+  padding: 14px;
+  border-radius: var(--r-md);
+  border: 1px solid rgba(33, 212, 253, .22);
+  background: linear-gradient(180deg, rgba(33, 212, 253, .07), rgba(255, 255, 255, .02));
+}
+.translation__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-size: .8rem;
+  font-weight: 700;
+  color: var(--cyan);
+}
+.translation__head svg { width: 16px; height: 16px; flex-shrink: 0; }
+.translation__text {
+  font-size: .88rem;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-line;
+}
+.translation__note {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: .74rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
 
 /* Variants */
 .variants { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 14px; }
@@ -1318,7 +1371,6 @@ img, svg { display: block; max-width: 100%; }
   .composer__submit { width: auto; justify-self: end; grid-column: 2; }
   .result { padding: 22px; }
   .result__actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .result__actions .btn--copy { grid-column: auto; }
   .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footer__inner { grid-template-columns: 1fr auto; align-items: center; }
@@ -1703,6 +1755,345 @@ const LIMITS = {
   historySize: 60,
   favoritesSize: 120,
 };
+
+
+/* ────────── assets/js/ai/api-provider.js ────────── */
+
+/**
+ * Провайдер на основе HTTP API.
+ *
+ * Ожидаемый контракт бэкенда — один POST-эндпоинт (AI.endpoint):
+ *
+ *   POST /api/prompt
+ *   {
+ *     "task": "generate" | "improve" | "variants" | "translate" | "translate-ru",
+ *     "idea": "футуристический город",        // для generate/variants
+ *     "prompt": "a futuristic city, ...",     // для improve
+ *     "text": "текст",                        // для translate
+ *     "settings": { "style": "cyberpunk", "camera": "cinematic",
+ *                   "lighting": "neon", "quality": "8k", "aspect": "16:9" },
+ *     "count": 3                              // для variants
+ *   }
+ *
+ *   200 OK
+ *   { "prompt": "...", "multiline": "...", "negative": "...", "ratio": "--ar 16:9" }
+ *   { "variants": [{ "name": "...", "prompt": "..." }] }
+ *   { "text": "..." }
+ *
+ * Ключи моделей должны оставаться на сервере: браузер к ним не обращается.
+ */
+
+
+
+async function request(task, payload) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI.timeoutMs);
+
+  try {
+    const response = await fetch(AI.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, ...payload }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI API вернул ${response.status}`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const apiProvider = {
+  id: 'api',
+
+  async generate({ idea, settings }) {
+    const data = await request('generate', { idea, settings });
+    return {
+      prompt: data.prompt,
+      multiline: data.multiline || data.prompt,
+      parts: data.parts || {},
+      negative: data.negative || '',
+      ratio: data.ratio || '',
+      source: 'api',
+    };
+  },
+
+  async improve({ prompt, multiline, settings }) {
+    const data = await request('improve', { prompt, multiline, settings });
+    return {
+      prompt: data.prompt,
+      multiline: data.multiline || data.prompt,
+      added: data.added || [],
+      source: 'api',
+    };
+  },
+
+  async variants({ idea, settings, count }) {
+    const data = await request('variants', { idea, settings, count });
+    return {
+      variants: (data.variants || []).map((item, index) => ({
+        id: item.id || `api-${index}`,
+        name: item.name || `Вариант ${index + 1}`,
+        prompt: item.prompt,
+        multiline: item.multiline || item.prompt,
+      })),
+      source: 'api',
+    };
+  },
+
+  async translate({ text }) {
+    const data = await request('translate', { text });
+    return { text: data.text, source: 'api' };
+  },
+
+  async translateRu({ text, idea }) {
+    const data = await request('translate-ru', { text, idea });
+    return { text: data.text, source: 'api' };
+  },
+
+  async translateIdea({ idea }) {
+    const data = await request('translate', { text: idea });
+    return { text: data.text, source: 'api' };
+  },
+};
+
+
+/* ────────── assets/js/data/options.js ────────── */
+
+/**
+ * Настройки промпта: камера, освещение, качество, формат.
+ * `prompt` — точная английская формулировка, которая попадает в результат.
+ */
+
+const SETTING_GROUPS = [
+  {
+    id: 'camera',
+    label: 'Камера',
+    icon: 'camera',
+    options: [
+      { id: 'dslr',      label: 'DSLR',       prompt: 'DSLR photography, 50mm lens, shallow depth of field' },
+      { id: 'cinematic', label: 'Cinematic',  prompt: 'cinematic camera angle, anamorphic wide shot' },
+      { id: 'drone',     label: 'Drone shot', prompt: 'drone shot, aerial perspective from above' },
+      { id: 'macro',     label: 'Macro',      prompt: 'macro shot, extreme close-up, fine micro detail' },
+    ],
+  },
+  {
+    id: 'lighting',
+    label: 'Освещение',
+    icon: 'sun',
+    options: [
+      { id: 'sunset', label: 'Sunset',          prompt: 'golden hour sunset light, warm rim glow' },
+      { id: 'neon',   label: 'Neon lights',     prompt: 'neon lights, volumetric lighting, colored reflections' },
+      { id: 'studio', label: 'Studio lighting', prompt: 'professional studio lighting, soft shadows' },
+    ],
+  },
+  {
+    id: 'quality',
+    label: 'Качество',
+    icon: 'sparkles',
+    options: [
+      { id: 'hd', label: 'HD', prompt: 'high definition, HD quality' },
+      { id: '4k', label: '4K', prompt: '4K resolution, ultra sharp' },
+      { id: '8k', label: '8K', prompt: '8K detail, ultra high resolution' },
+    ],
+  },
+  {
+    id: 'aspect',
+    label: 'Формат',
+    icon: 'frame',
+    options: [
+      { id: '16:9', label: '16:9', prompt: 'wide 16:9 composition', ratio: '--ar 16:9' },
+      { id: '1:1',  label: '1:1',  prompt: 'square 1:1 composition', ratio: '--ar 1:1' },
+      { id: '9:16', label: '9:16', prompt: 'vertical 9:16 composition', ratio: '--ar 9:16' },
+    ],
+  },
+];
+
+const GROUP_MAP = Object.fromEntries(SETTING_GROUPS.map((group) => [group.id, group]));
+
+function getOption(groupId, optionId) {
+  const group = GROUP_MAP[groupId];
+  if (!group) return null;
+  return group.options.find((option) => option.id === optionId) || group.options[0];
+}
+
+/** Дополнительные формулировки для кнопки «Улучшить промпт». */
+const ENHANCERS = {
+  composition: [
+    'rule of thirds composition',
+    'balanced composition with strong focal point',
+    'dynamic perspective with leading lines',
+    'symmetrical framing',
+  ],
+  color: [
+    'cinematic color grading, teal and orange palette',
+    'harmonious color palette with deep contrast',
+    'rich vibrant colors with soft gradients',
+    'muted cinematic tones',
+  ],
+  atmosphere: [
+    'atmospheric haze and depth',
+    'subtle particles floating in the air',
+    'soft ambient fog in the background',
+    'dramatic mood with layered depth',
+  ],
+  finish: [
+    'award winning photography',
+    'masterpiece quality, highly detailed',
+    'trending on ArtStation',
+    'professional grade render',
+  ],
+};
+
+/** Идеи для кнопки «Случайная идея». */
+const IDEA_SEEDS = [
+  'футуристический город с летающими машинами',
+  'девушка-самурай под дождём из лепестков сакуры',
+  'старый маяк на скале во время шторма',
+  'кот-астронавт в открытом космосе',
+  'заброшенный поезд, заросший цветами',
+  'дракон спит на горе золота в пещере',
+  'уютная кофейня зимним вечером',
+  'робот поливает сад на крыше небоскрёба',
+  'портрет пожилого рыбака с обветренным лицом',
+  'подводный город со светящимися куполами',
+  'библиотека с бесконечными лестницами',
+  'мотоциклист на пустынном шоссе на закате',
+];
+
+
+/* ────────── assets/js/data/styles.js ────────── */
+
+/**
+ * Стили изображения.
+ *
+ * Каждый стиль — это готовый набор английских формулировок, из которых
+ * собирается промпт: модификаторы стиля, типичное окружение, освещение,
+ * детализация и negative prompt.
+ */
+
+const STYLES = [
+  {
+    id: 'realism',
+    name: 'Реализм',
+    icon: '📷',
+    desc: 'Фотография как есть',
+    gradient: 'linear-gradient(135deg, #38bdf8, #0ea5e9)',
+    modifiers: ['photorealistic', 'hyperrealistic', 'shot on Canon EOS R5, 85mm lens'],
+    environments: [
+      'natural surroundings with realistic depth of field',
+      'lifelike setting with authentic textures',
+      'real-world location with atmospheric perspective',
+    ],
+    lighting: 'soft natural light',
+    detail: ['ultra realistic', 'sharp focus', 'fine skin and material texture'],
+    negative: 'cartoon, illustration, plastic skin, distorted anatomy, watermark',
+  },
+  {
+    id: 'anime',
+    name: 'Аниме',
+    icon: '🌸',
+    desc: 'Японская анимация',
+    gradient: 'linear-gradient(135deg, #f472b6, #a855f7)',
+    modifiers: ['anime style', 'Japanese animation', 'cel shaded', 'clean line art'],
+    environments: [
+      'vibrant anime background with expressive skies',
+      'detailed anime cityscape',
+      'pastel scenery with soft gradients',
+    ],
+    lighting: 'bright rim lighting',
+    detail: ['highly detailed', 'crisp linework', 'vivid saturated colors'],
+    negative: 'photorealistic, 3d render, blurry lines, extra fingers, text',
+  },
+  {
+    id: 'cyberpunk',
+    name: 'Киберпанк',
+    icon: '🌃',
+    desc: 'Неон и будущее',
+    gradient: 'linear-gradient(135deg, #22d3ee, #a855f7)',
+    modifiers: ['cyberpunk style', 'futuristic dystopia', 'blade runner aesthetic'],
+    environments: [
+      'rainy streets with neon lights',
+      'dense megacity with holographic billboards',
+      'neon-soaked alley with wet reflective asphalt',
+    ],
+    lighting: 'neon lights, volumetric lighting',
+    detail: ['ultra detailed', 'reflections and wet surfaces', 'chromatic aberration'],
+    negative: 'daylight, rustic, medieval, low contrast, watermark',
+  },
+  {
+    id: 'fantasy',
+    name: 'Фэнтези',
+    icon: '🐉',
+    desc: 'Магия и эпос',
+    gradient: 'linear-gradient(135deg, #34d399, #6366f1)',
+    modifiers: ['epic fantasy art', 'matte painting', 'mythical atmosphere'],
+    environments: [
+      'ancient magical landscape with floating particles',
+      'enchanted forest wrapped in mist',
+      'legendary kingdom under a vast sky',
+    ],
+    lighting: 'golden magical glow',
+    detail: ['intricate details', 'epic scale', 'rich ornamental design'],
+    negative: 'modern clothing, cars, urban signage, low detail',
+  },
+  {
+    id: '3d',
+    name: '3D',
+    icon: '🧊',
+    desc: 'Объёмный рендер',
+    gradient: 'linear-gradient(135deg, #818cf8, #22d3ee)',
+    modifiers: ['3D render', 'Octane render', 'Blender cycles', 'subsurface scattering'],
+    environments: [
+      'clean studio environment with soft shadows',
+      'stylized 3D scene with depth of field',
+      'isometric 3D set with polished materials',
+    ],
+    lighting: 'studio lighting with soft shadows',
+    detail: ['ray tracing', 'physically based materials', 'high poly detail'],
+    negative: 'flat shading, jpeg artifacts, noisy render, text',
+  },
+  {
+    id: 'cinema',
+    name: 'Кино',
+    icon: '🎬',
+    desc: 'Кадр из фильма',
+    gradient: 'linear-gradient(135deg, #fbbf24, #f97316)',
+    modifiers: ['cinematic film still', 'movie scene', 'anamorphic lens, 35mm film grain'],
+    environments: [
+      'dramatic location with atmospheric haze',
+      'cinematic set with layered background',
+      'moody environment with shallow depth of field',
+    ],
+    lighting: 'cinematic lighting, dramatic contrast',
+    detail: ['cinematic color grading', 'high dynamic range', 'film-like detail'],
+    negative: 'flat lighting, amateur snapshot, oversaturated, watermark',
+  },
+  {
+    id: 'art',
+    name: 'Арт',
+    icon: '🎨',
+    desc: 'Цифровая живопись',
+    gradient: 'linear-gradient(135deg, #fb7185, #f59e0b)',
+    modifiers: ['digital painting', 'concept art', 'expressive brush strokes', 'trending on ArtStation'],
+    environments: [
+      'painterly background with bold composition',
+      'stylized scene with textured brushwork',
+      'artistic environment with strong silhouette',
+    ],
+    lighting: 'dramatic painterly light',
+    detail: ['masterpiece', 'rich color palette', 'detailed brush texture'],
+    negative: 'photo, 3d render, flat colors, low effort sketch',
+  },
+];
+
+const STYLE_MAP = Object.fromEntries(STYLES.map((style) => [style.id, style]));
+
+const getStyle = (id) => STYLE_MAP[id] || STYLES[0];
 
 
 /* ────────── assets/js/utils.js ────────── */
@@ -2161,240 +2552,6 @@ const TRANSLIT = {
 };
 
 
-/* ────────── assets/js/data/styles.js ────────── */
-
-/**
- * Стили изображения.
- *
- * Каждый стиль — это готовый набор английских формулировок, из которых
- * собирается промпт: модификаторы стиля, типичное окружение, освещение,
- * детализация и negative prompt.
- */
-
-const STYLES = [
-  {
-    id: 'realism',
-    name: 'Реализм',
-    icon: '📷',
-    desc: 'Фотография как есть',
-    gradient: 'linear-gradient(135deg, #38bdf8, #0ea5e9)',
-    modifiers: ['photorealistic', 'hyperrealistic', 'shot on Canon EOS R5, 85mm lens'],
-    environments: [
-      'natural surroundings with realistic depth of field',
-      'lifelike setting with authentic textures',
-      'real-world location with atmospheric perspective',
-    ],
-    lighting: 'soft natural light',
-    detail: ['ultra realistic', 'sharp focus', 'fine skin and material texture'],
-    negative: 'cartoon, illustration, plastic skin, distorted anatomy, watermark',
-  },
-  {
-    id: 'anime',
-    name: 'Аниме',
-    icon: '🌸',
-    desc: 'Японская анимация',
-    gradient: 'linear-gradient(135deg, #f472b6, #a855f7)',
-    modifiers: ['anime style', 'Japanese animation', 'cel shaded', 'clean line art'],
-    environments: [
-      'vibrant anime background with expressive skies',
-      'detailed anime cityscape',
-      'pastel scenery with soft gradients',
-    ],
-    lighting: 'bright rim lighting',
-    detail: ['highly detailed', 'crisp linework', 'vivid saturated colors'],
-    negative: 'photorealistic, 3d render, blurry lines, extra fingers, text',
-  },
-  {
-    id: 'cyberpunk',
-    name: 'Киберпанк',
-    icon: '🌃',
-    desc: 'Неон и будущее',
-    gradient: 'linear-gradient(135deg, #22d3ee, #a855f7)',
-    modifiers: ['cyberpunk style', 'futuristic dystopia', 'blade runner aesthetic'],
-    environments: [
-      'rainy streets with neon lights',
-      'dense megacity with holographic billboards',
-      'neon-soaked alley with wet reflective asphalt',
-    ],
-    lighting: 'neon lights, volumetric lighting',
-    detail: ['ultra detailed', 'reflections and wet surfaces', 'chromatic aberration'],
-    negative: 'daylight, rustic, medieval, low contrast, watermark',
-  },
-  {
-    id: 'fantasy',
-    name: 'Фэнтези',
-    icon: '🐉',
-    desc: 'Магия и эпос',
-    gradient: 'linear-gradient(135deg, #34d399, #6366f1)',
-    modifiers: ['epic fantasy art', 'matte painting', 'mythical atmosphere'],
-    environments: [
-      'ancient magical landscape with floating particles',
-      'enchanted forest wrapped in mist',
-      'legendary kingdom under a vast sky',
-    ],
-    lighting: 'golden magical glow',
-    detail: ['intricate details', 'epic scale', 'rich ornamental design'],
-    negative: 'modern clothing, cars, urban signage, low detail',
-  },
-  {
-    id: '3d',
-    name: '3D',
-    icon: '🧊',
-    desc: 'Объёмный рендер',
-    gradient: 'linear-gradient(135deg, #818cf8, #22d3ee)',
-    modifiers: ['3D render', 'Octane render', 'Blender cycles', 'subsurface scattering'],
-    environments: [
-      'clean studio environment with soft shadows',
-      'stylized 3D scene with depth of field',
-      'isometric 3D set with polished materials',
-    ],
-    lighting: 'studio lighting with soft shadows',
-    detail: ['ray tracing', 'physically based materials', 'high poly detail'],
-    negative: 'flat shading, jpeg artifacts, noisy render, text',
-  },
-  {
-    id: 'cinema',
-    name: 'Кино',
-    icon: '🎬',
-    desc: 'Кадр из фильма',
-    gradient: 'linear-gradient(135deg, #fbbf24, #f97316)',
-    modifiers: ['cinematic film still', 'movie scene', 'anamorphic lens, 35mm film grain'],
-    environments: [
-      'dramatic location with atmospheric haze',
-      'cinematic set with layered background',
-      'moody environment with shallow depth of field',
-    ],
-    lighting: 'cinematic lighting, dramatic contrast',
-    detail: ['cinematic color grading', 'high dynamic range', 'film-like detail'],
-    negative: 'flat lighting, amateur snapshot, oversaturated, watermark',
-  },
-  {
-    id: 'art',
-    name: 'Арт',
-    icon: '🎨',
-    desc: 'Цифровая живопись',
-    gradient: 'linear-gradient(135deg, #fb7185, #f59e0b)',
-    modifiers: ['digital painting', 'concept art', 'expressive brush strokes', 'trending on ArtStation'],
-    environments: [
-      'painterly background with bold composition',
-      'stylized scene with textured brushwork',
-      'artistic environment with strong silhouette',
-    ],
-    lighting: 'dramatic painterly light',
-    detail: ['masterpiece', 'rich color palette', 'detailed brush texture'],
-    negative: 'photo, 3d render, flat colors, low effort sketch',
-  },
-];
-
-const STYLE_MAP = Object.fromEntries(STYLES.map((style) => [style.id, style]));
-
-const getStyle = (id) => STYLE_MAP[id] || STYLES[0];
-
-
-/* ────────── assets/js/data/options.js ────────── */
-
-/**
- * Настройки промпта: камера, освещение, качество, формат.
- * `prompt` — точная английская формулировка, которая попадает в результат.
- */
-
-const SETTING_GROUPS = [
-  {
-    id: 'camera',
-    label: 'Камера',
-    icon: 'camera',
-    options: [
-      { id: 'dslr',      label: 'DSLR',       prompt: 'DSLR photography, 50mm lens, shallow depth of field' },
-      { id: 'cinematic', label: 'Cinematic',  prompt: 'cinematic camera angle, anamorphic wide shot' },
-      { id: 'drone',     label: 'Drone shot', prompt: 'drone shot, aerial perspective from above' },
-      { id: 'macro',     label: 'Macro',      prompt: 'macro shot, extreme close-up, fine micro detail' },
-    ],
-  },
-  {
-    id: 'lighting',
-    label: 'Освещение',
-    icon: 'sun',
-    options: [
-      { id: 'sunset', label: 'Sunset',          prompt: 'golden hour sunset light, warm rim glow' },
-      { id: 'neon',   label: 'Neon lights',     prompt: 'neon lights, volumetric lighting, colored reflections' },
-      { id: 'studio', label: 'Studio lighting', prompt: 'professional studio lighting, soft shadows' },
-    ],
-  },
-  {
-    id: 'quality',
-    label: 'Качество',
-    icon: 'sparkles',
-    options: [
-      { id: 'hd', label: 'HD', prompt: 'high definition, HD quality' },
-      { id: '4k', label: '4K', prompt: '4K resolution, ultra sharp' },
-      { id: '8k', label: '8K', prompt: '8K detail, ultra high resolution' },
-    ],
-  },
-  {
-    id: 'aspect',
-    label: 'Формат',
-    icon: 'frame',
-    options: [
-      { id: '16:9', label: '16:9', prompt: 'wide 16:9 composition', ratio: '--ar 16:9' },
-      { id: '1:1',  label: '1:1',  prompt: 'square 1:1 composition', ratio: '--ar 1:1' },
-      { id: '9:16', label: '9:16', prompt: 'vertical 9:16 composition', ratio: '--ar 9:16' },
-    ],
-  },
-];
-
-const GROUP_MAP = Object.fromEntries(SETTING_GROUPS.map((group) => [group.id, group]));
-
-function getOption(groupId, optionId) {
-  const group = GROUP_MAP[groupId];
-  if (!group) return null;
-  return group.options.find((option) => option.id === optionId) || group.options[0];
-}
-
-/** Дополнительные формулировки для кнопки «Улучшить промпт». */
-const ENHANCERS = {
-  composition: [
-    'rule of thirds composition',
-    'balanced composition with strong focal point',
-    'dynamic perspective with leading lines',
-    'symmetrical framing',
-  ],
-  color: [
-    'cinematic color grading, teal and orange palette',
-    'harmonious color palette with deep contrast',
-    'rich vibrant colors with soft gradients',
-    'muted cinematic tones',
-  ],
-  atmosphere: [
-    'atmospheric haze and depth',
-    'subtle particles floating in the air',
-    'soft ambient fog in the background',
-    'dramatic mood with layered depth',
-  ],
-  finish: [
-    'award winning photography',
-    'masterpiece quality, highly detailed',
-    'trending on ArtStation',
-    'professional grade render',
-  ],
-};
-
-/** Идеи для кнопки «Случайная идея». */
-const IDEA_SEEDS = [
-  'футуристический город с летающими машинами',
-  'девушка-самурай под дождём из лепестков сакуры',
-  'старый маяк на скале во время шторма',
-  'кот-астронавт в открытом космосе',
-  'заброшенный поезд, заросший цветами',
-  'дракон спит на горе золота в пещере',
-  'уютная кофейня зимним вечером',
-  'робот поливает сад на крыше небоскрёба',
-  'портрет пожилого рыбака с обветренным лицом',
-  'подводный город со светящимися куполами',
-  'библиотека с бесконечными лестницами',
-  'мотоциклист на пустынном шоссе на закате',
-];
-
-
 /* ────────── assets/js/engine/translator.js ────────── */
 
 /**
@@ -2407,6 +2564,8 @@ const IDEA_SEEDS = [
  *   2. переводим слова по словарю, снимая падежные окончания;
  *   3. неизвестные слова транслитерируем, чтобы ничего не терялось.
  */
+
+
 
 
 /** Снимает падежное/числовое окончание, оставляя основу минимум из 3 букв. */
@@ -2598,6 +2757,10 @@ function translatePrompt(prompt = '') {
  */
 
 
+
+
+
+
 /** Артикль и лёгкая «огранка» описания объекта. */
 function normalizeSubject(subject) {
   let text = tidyPrompt(subject).replace(/^(a|an|the)\s+/i, '');
@@ -2758,6 +2921,565 @@ function buildVariants({ idea, settings, count = 3 }) {
 }
 
 
+/* ────────── assets/js/data/fragments-ru.js ────────── */
+
+/**
+ * Русские значения фрагментов промпта.
+ *
+ * Промпт собирается из известного набора английских формулировок (стили,
+ * окружение, камера, свет, качество, детализация, negative prompt), поэтому
+ * перевод делается не пословно, а точным соответствием: для каждого
+ * фрагмента, который движок способен выдать, здесь лежит человеческий
+ * русский вариант.
+ *
+ * Ключи — в нижнем регистре. Полнота набора проверяется тестом
+ * tests/fragments.test.mjs: он обходит все стили, настройки и варианты
+ * и падает, если для какого-то фрагмента перевода нет.
+ */
+
+const FRAGMENTS_RU = {
+  /* — стили — */
+  'photorealistic': 'фотореалистично',
+  'hyperrealistic': 'гиперреалистично',
+  'shot on canon eos r5': 'снято на Canon EOS R5',
+  'anime style': 'стиль аниме',
+  'japanese animation': 'японская анимация',
+  'cel shaded': 'сел-шейдинг',
+  'clean line art': 'чистый контурный рисунок',
+  'cyberpunk style': 'стиль киберпанк',
+  'futuristic dystopia': 'футуристическая антиутопия',
+  'blade runner aesthetic': 'эстетика «Бегущего по лезвию»',
+  'epic fantasy art': 'эпический фэнтезийный арт',
+  'matte painting': 'мэт-пейнтинг',
+  'mythical atmosphere': 'мифическая атмосфера',
+  '3d render': '3D-рендер',
+  'octane render': 'рендер Octane',
+  'blender cycles': 'рендер Blender Cycles',
+  'subsurface scattering': 'подповерхностное рассеивание',
+  'cinematic film still': 'кадр из фильма',
+  'movie scene': 'сцена из кино',
+  'anamorphic lens': 'анаморфотный объектив',
+  '35mm film grain': 'зерно 35-мм плёнки',
+  'digital painting': 'цифровая живопись',
+  'concept art': 'концепт-арт',
+  'expressive brush strokes': 'выразительные мазки',
+  'trending on artstation': 'в топе ArtStation',
+
+  /* — окружение — */
+  'natural surroundings with realistic depth of field': 'естественное окружение с реалистичной глубиной резкости',
+  'lifelike setting with authentic textures': 'живая обстановка с достоверными текстурами',
+  'real-world location with atmospheric perspective': 'реальная локация с воздушной перспективой',
+  'vibrant anime background with expressive skies': 'яркий аниме-фон с выразительным небом',
+  'detailed anime cityscape': 'детализированный аниме-город',
+  'pastel scenery with soft gradients': 'пастельный пейзаж с мягкими градиентами',
+  'rainy streets with neon lights': 'дождливые улицы в неоновых огнях',
+  'dense megacity with holographic billboards': 'плотный мегаполис с голографическими билбордами',
+  'neon-soaked alley with wet reflective asphalt': 'залитый неоном переулок с мокрым зеркальным асфальтом',
+  'ancient magical landscape with floating particles': 'древний магический пейзаж с парящими частицами',
+  'enchanted forest wrapped in mist': 'зачарованный лес, окутанный туманом',
+  'legendary kingdom under a vast sky': 'легендарное королевство под бескрайним небом',
+  'clean studio environment with soft shadows': 'чистая студийная среда с мягкими тенями',
+  'stylized 3d scene with depth of field': 'стилизованная 3D-сцена с глубиной резкости',
+  'isometric 3d set with polished materials': 'изометрическая 3D-сцена с отполированными материалами',
+  'dramatic location with atmospheric haze': 'драматичная локация с атмосферной дымкой',
+  'cinematic set with layered background': 'киношная сцена с многоплановым фоном',
+  'moody environment with shallow depth of field': 'атмосферное окружение с малой глубиной резкости',
+  'painterly background with bold composition': 'живописный фон со смелой композицией',
+  'stylized scene with textured brushwork': 'стилизованная сцена с фактурными мазками',
+  'artistic environment with strong silhouette': 'художественное окружение с выразительным силуэтом',
+  'glowing neon accents': 'светящиеся неоновые акценты',
+  'warm evening sky': 'тёплое вечернее небо',
+
+  /* — камера — */
+  'dslr photography': 'съёмка на зеркальную камеру',
+  '50mm lens': 'объектив 50 мм',
+  '85mm lens': 'объектив 85 мм',
+  'shallow depth of field': 'малая глубина резкости',
+  'cinematic camera angle': 'кинематографичный ракурс',
+  'anamorphic wide shot': 'широкий анаморфотный кадр',
+  'drone shot': 'съёмка с дрона',
+  'aerial perspective from above': 'вид с высоты птичьего полёта',
+  'macro shot': 'макросъёмка',
+  'extreme close-up': 'сверхкрупный план',
+  'fine micro detail': 'тончайшая микродетализация',
+
+  /* — освещение — */
+  'golden hour sunset light': 'закатный свет золотого часа',
+  'warm rim glow': 'тёплое контровое свечение',
+  'neon lights': 'неоновые огни',
+  'volumetric lighting': 'объёмный свет',
+  'colored reflections': 'цветные отражения',
+  'professional studio lighting': 'профессиональный студийный свет',
+  'soft shadows': 'мягкие тени',
+  'soft natural light': 'мягкий естественный свет',
+  'bright rim lighting': 'яркий контровой свет',
+  'golden magical glow': 'золотое магическое сияние',
+  'studio lighting with soft shadows': 'студийный свет с мягкими тенями',
+  'cinematic lighting': 'кинематографичный свет',
+  'dramatic contrast': 'драматичный контраст',
+  'dramatic painterly light': 'драматичный живописный свет',
+  'dramatic backlight': 'драматичный контровой свет',
+  'deep shadows': 'глубокие тени',
+  'soft diffused light': 'мягкий рассеянный свет',
+  'gentle highlights': 'мягкие блики',
+  'volumetric god rays': 'объёмные лучи света',
+  'glowing atmosphere': 'светящаяся атмосфера',
+  'clean even lighting': 'чистый равномерный свет',
+  'subtle gradient': 'едва заметный градиент',
+  'moonlight with cool blue tones': 'лунный свет в холодных синих тонах',
+
+  /* — качество — */
+  'high definition': 'высокая чёткость',
+  'hd quality': 'качество HD',
+  '4k resolution': 'разрешение 4K',
+  'ultra sharp': 'предельная резкость',
+  '8k detail': 'детализация 8K',
+  'ultra high resolution': 'сверхвысокое разрешение',
+
+  /* — формат — */
+  'wide 16:9 composition': 'широкая композиция 16:9',
+  'square 1:1 composition': 'квадратная композиция 1:1',
+  'vertical 9:16 composition': 'вертикальная композиция 9:16',
+
+  /* — детализация — */
+  'ultra realistic': 'ультрареалистично',
+  'sharp focus': 'резкий фокус',
+  'fine skin and material texture': 'тонкая текстура кожи и материалов',
+  'highly detailed': 'высокая детализация',
+  'crisp linework': 'чёткая обводка',
+  'vivid saturated colors': 'сочные насыщенные цвета',
+  'ultra detailed': 'ультрадетализировано',
+  'reflections and wet surfaces': 'отражения и мокрые поверхности',
+  'chromatic aberration': 'хроматическая аберрация',
+  'intricate details': 'филигранные детали',
+  'epic scale': 'эпический масштаб',
+  'rich ornamental design': 'богатый орнамент',
+  'ray tracing': 'трассировка лучей',
+  'physically based materials': 'физически корректные материалы',
+  'high poly detail': 'высокополигональная детализация',
+  'cinematic color grading': 'кинематографичная цветокоррекция',
+  'high dynamic range': 'широкий динамический диапазон',
+  'film-like detail': 'плёночная детализация',
+  'masterpiece': 'шедевр',
+  'rich color palette': 'богатая палитра',
+  'detailed brush texture': 'детальная фактура мазков',
+
+  /* — улучшение промпта — */
+  'rule of thirds composition': 'композиция по правилу третей',
+  'balanced composition with strong focal point': 'уравновешенная композиция с чётким смысловым центром',
+  'dynamic perspective with leading lines': 'динамичная перспектива с направляющими линиями',
+  'symmetrical framing': 'симметричное кадрирование',
+  'teal and orange palette': 'палитра «бирюзовый и оранжевый»',
+  'harmonious color palette with deep contrast': 'гармоничная палитра с глубоким контрастом',
+  'rich vibrant colors with soft gradients': 'насыщенные цвета с мягкими градиентами',
+  'muted cinematic tones': 'приглушённые киношные тона',
+  'atmospheric haze and depth': 'атмосферная дымка и глубина',
+  'subtle particles floating in the air': 'мельчайшие частицы в воздухе',
+  'soft ambient fog in the background': 'лёгкий туман на фоне',
+  'dramatic mood with layered depth': 'драматичное настроение с многоплановой глубиной',
+  'award winning photography': 'фотография, отмеченная наградами',
+  'masterpiece quality': 'качество шедевра',
+  'professional grade render': 'рендер профессионального уровня',
+
+  /* — настроения вариантов — */
+  'high contrast': 'высокий контраст',
+  'moody atmosphere': 'мрачноватая атмосфера',
+  'delicate textures': 'деликатные текстуры',
+  'pastel tones': 'пастельные тона',
+  'sweeping perspective': 'размашистая перспектива',
+  'minimalist composition': 'минималистичная композиция',
+  'negative space': 'свободное пространство вокруг объекта',
+  'night ambience': 'ночная атмосфера',
+  'glowing highlights': 'светящиеся блики',
+
+  /* — negative prompt — */
+  'cartoon': 'мультяшность',
+  'illustration': 'иллюстрация',
+  'plastic skin': 'пластиковая кожа',
+  'distorted anatomy': 'искажённая анатомия',
+  'watermark': 'водяной знак',
+  'blurry lines': 'размытые линии',
+  'extra fingers': 'лишние пальцы',
+  'text': 'текст',
+  'daylight': 'дневной свет',
+  'rustic': 'деревенский стиль',
+  'medieval': 'средневековье',
+  'low contrast': 'низкий контраст',
+  'modern clothing': 'современная одежда',
+  'cars': 'машины',
+  'urban signage': 'городские вывески',
+  'low detail': 'низкая детализация',
+  'flat shading': 'плоская заливка',
+  'jpeg artifacts': 'артефакты сжатия JPEG',
+  'noisy render': 'шумный рендер',
+  'flat lighting': 'плоский свет',
+  'amateur snapshot': 'любительский снимок',
+  'oversaturated': 'перенасыщенные цвета',
+  'photo': 'фотография',
+  'flat colors': 'плоские цвета',
+  'low effort sketch': 'небрежный набросок',
+};
+
+
+/* ────────── assets/js/engine/ru-translator.js ────────── */
+
+/**
+ * Обратный перевод: готовый английский промпт → русский текст.
+ *
+ * Нужен, чтобы пользователь понимал, что именно он копирует. Сам промпт
+ * при этом остаётся английским — генераторы изображений работают с ним.
+ *
+ * Порядок поиска для каждого фрагмента:
+ *   1. точное соответствие из FRAGMENTS_RU — там лежат все формулировки,
+ *      которые способен выдать движок, поэтому основной текст переводится
+ *      дословно и грамотно;
+ *   2. обратный словарь WORDS — для описания, которое ввёл пользователь;
+ *   3. если ничего не нашлось, фрагмент остаётся как есть.
+ */
+
+
+
+
+
+/** Синонимы, которых нет среди значений основного словаря. */
+const EXTRA_WORDS = {
+  big: 'большой', little: 'маленький', nice: 'красивый', lovely: 'милый',
+  giant: 'гигантский', tall: 'высокий', dark: 'тёмный', light: 'светлый',
+  shiny: 'блестящий', glowing: 'светящийся', flying: 'летающий',
+  standing: 'стоящий', sitting: 'сидящий', sleeping: 'спящий',
+  running: 'бегущий', burning: 'горящий', floating: 'парящий',
+  guy: 'парень', lady: 'женщина', kid: 'ребёнок', view: 'вид',
+  one: 'один', two: 'два', three: 'три', four: 'четыре', five: 'пять',
+  ten: 'десять', many: 'много', several: 'несколько',
+  roof: 'крыша', sunset: 'закат', sunrise: 'рассвет', clouds: 'облака',
+};
+
+/** Английское значение → русское слово. Первое вхождение выигрывает. */
+const REVERSE_WORDS = (() => {
+  const index = new Map();
+  for (const [ru, en] of Object.entries(WORDS)) {
+    const key = en.toLowerCase();
+    if (!index.has(key)) index.set(key, ru);
+  }
+  for (const [en, ru] of Object.entries(EXTRA_WORDS)) {
+    if (!index.has(en)) index.set(en, ru);
+  }
+  return index;
+})();
+
+/** Самая длинная фраза в обратном словаре — граница для жадного поиска. */
+const MAX_PHRASE = Math.max(...[...REVERSE_WORDS.keys()].map((key) => key.split(' ').length));
+
+const ARTICLES = new Set(['a', 'an', 'the']);
+
+
+/**
+ * Предлоги, которые в пересказе заменяются запятой.
+ *
+ * Русский предлог требует падежа («на скале», а не «на скала»), а склонять
+ * слова движок не умеет. Поэтому описание, введённое по-английски, мы не
+ * собираем в фразу, а показываем ключевыми словами через запятую — ровно
+ * так, как их читает генератор изображений.
+ */
+const SEPARATORS = new Set([
+  'in', 'on', 'at', 'under', 'above', 'over', 'with', 'without', 'of', 'from',
+  'to', 'into', 'near', 'behind', 'before', 'between', 'among', 'around',
+  'through', 'during', 'inside', 'outside', 'against', 'and', 'or',
+]);
+
+/** Слова мужского рода с «женским» окончанием — исключения для согласования. */
+const MASCULINE_EXCEPTIONS = new Set(['мужчина', 'дедушка', 'папа', 'юноша', 'судья', 'коллега', 'слуга']);
+
+/** Английское слово стоит во множественном числе? */
+const isPluralEn = (word) => /s$/i.test(word) && !/(ss|us|is|ous)$/i.test(word);
+
+/** Русское слово уже во множественном числе? В словаре такие оканчиваются на -ы/-и. */
+const isPluralRu = (word) => /(ы|и)$/.test(word);
+
+/** Английское слово в единственном числе: cars → car, cities → city, boxes → box. */
+function singularizeEn(word) {
+  if (/ies$/i.test(word)) return `${word.slice(0, -3)}y`;
+  if (/(ch|sh|x|z|s)es$/i.test(word)) return word.slice(0, -2);
+  if (/s$/i.test(word)) return word.slice(0, -1);
+  return word;
+}
+
+/** После шипящих и заднеязычных вместо -ы/-ый пишется -и/-ий. */
+const isSoftStem = (stem) => /[гкхжчшщ]$/.test(stem);
+
+/** Множественное число существительного: машина → машины, облако → облака. */
+function pluralizeRu(word) {
+  if (isPluralRu(word)) return word;
+  if (/(а|я)$/.test(word)) {
+    const stem = word.slice(0, -1);
+    if (word.endsWith('я')) return `${stem}и`;
+    return stem + (isSoftStem(stem) ? 'и' : 'ы');
+  }
+  if (/о$/.test(word)) return `${word.slice(0, -1)}а`;
+  if (/е$/.test(word)) return `${word.slice(0, -1)}я`;
+  if (/ь$/.test(word)) return `${word.slice(0, -1)}и`;
+  return word + (isSoftStem(word) ? 'и' : 'ы');
+}
+
+/** Род существительного по окончанию. */
+function gender(word) {
+  const value = word.toLowerCase();
+  if (MASCULINE_EXCEPTIONS.has(value)) return 'm';
+  if (/(а|я)$/.test(value)) return 'f';
+  if (/(о|е|ё)$/.test(value)) return 'n';
+  return 'm';
+}
+
+/** Согласование прилагательного с существительным: «красный планета» → «красная планета». */
+function agree(adjective, noun, plural) {
+  if (plural) {
+    if (!/(ый|ой|ий)$/.test(adjective)) return adjective;
+    const stem = adjective.slice(0, -2);
+    return stem + (isSoftStem(stem) ? 'ие' : 'ые');
+  }
+
+  const form = gender(noun);
+  if (form === 'm') return adjective;
+
+  const soft = isSoftStem(adjective.slice(0, -2));
+
+  if (/(ый|ой)$/.test(adjective)) return adjective.slice(0, -2) + (form === 'f' ? 'ая' : 'ое');
+  if (/ий$/.test(adjective)) {
+    return adjective.slice(0, -2) + (form === 'f' ? (soft ? 'ая' : 'яя') : (soft ? 'ее' : 'ее'));
+  }
+  return adjective;
+}
+
+const SMALL_NUMERALS = new Set(['два', 'три', 'четыре']);
+
+/** Родительный падеж единственного числа: робот → робота, машины → машины. */
+function afterNumeral(word) {
+  // Готовые формы множественного числа («цветы») склонять нечем — оставляем.
+  if (/(ы|и)$/.test(word)) return word;
+  if (/(а|я)$/.test(word)) {
+    const stem = word.slice(0, -1);
+    return stem + (word.endsWith('я') ? 'и' : isSoftStem(stem) ? 'и' : 'ы');
+  }
+  if (/(о|е)$/.test(word)) return `${word.slice(0, -1)}а`;
+  if (/ь$/.test(word)) return `${word.slice(0, -1)}я`;
+  return `${word}а`;
+}
+
+/** Согласует каждую пару «прилагательное + существительное». */
+function agreeAll(tokens) {
+  return tokens.map((token, index) => {
+    const previous = tokens[index - 1];
+    if (previous && SMALL_NUMERALS.has(previous.text)) {
+      return { ...token, text: afterNumeral(token.singular || token.text) };
+    }
+
+    const next = tokens[index + 1];
+    if (!next || next.separator || !/(ый|ий|ой)$/.test(token.text)) return token;
+    return { ...token, text: agree(token.text, next.text, next.plural) };
+  });
+}
+
+/** Пословный перевод: жадно ищем самое длинное совпадение в обратном словаре. */
+function translateWords(fragment) {
+  const words = fragment.split(/\s+/).filter(Boolean);
+  const tokens = [];
+  let i = 0;
+
+  while (i < words.length) {
+    let matched = false;
+
+    for (let size = Math.min(MAX_PHRASE, words.length - i); size > 0; size -= 1) {
+      const source = words.slice(i, i + size).join(' ');
+      const key = source.toLowerCase().replace(/[.,!?]/g, '');
+      const direct = REVERSE_WORDS.get(key);
+      const viaSingular = direct ? undefined : REVERSE_WORDS.get(singularizeEn(key));
+      const hit = direct || viaSingular;
+
+      if (hit) {
+        const plural = isPluralEn(source) || isPluralRu(hit);
+        // Склоняем только то, что нашлось по единственному числу: в словаре
+        // формы вроде «деревья» и «облака» уже стоят во множественном.
+        const text = viaSingular && isPluralEn(source) ? pluralizeRu(hit) : hit;
+        tokens.push({ text, plural, singular: viaSingular ? hit : undefined });
+        i += size;
+        matched = true;
+        break;
+      }
+    }
+
+    if (!matched) {
+      const word = words[i];
+      const plain = word.toLowerCase().replace(/[.,!?]/g, '');
+
+      if (SEPARATORS.has(plain)) tokens.push({ text: ',', separator: true });
+      else if (!ARTICLES.has(plain)) tokens.push({ text: word, plural: isPluralEn(word) });
+      i += 1;
+    }
+  }
+
+  return agreeAll(tokens)
+    .map((token) => token.text)
+    .join(' ')
+    .replace(/\s+,/g, ',')
+    .replace(/(,\s*)+/g, ', ')
+    .replace(/^[,\s]+|[,\s]+$/g, '');
+}
+
+/** Перевод одного фрагмента промпта. */
+function translateFragment(fragment) {
+  const value = fragment.trim();
+  if (!value) return '';
+  if (hasCyrillic(value)) return value;
+
+  const exact = FRAGMENTS_RU[value.toLowerCase()];
+  if (exact) return exact;
+
+  return translateWords(value);
+}
+
+/**
+ * Перевод всего промпта с сохранением структуры по строкам.
+ *
+ * @param {string} text   — промпт (многострочный или в одну строку)
+ * @param {object} [options]
+ * @param {string} [options.idea] — исходное описание пользователя: если оно
+ *        на русском, первая строка берётся из него без перевода.
+ */
+function translateToRussian(text, { idea = '' } = {}) {
+  const original = String(idea).trim();
+  const useIdea = original && hasCyrillic(original);
+  let isFirst = true;
+
+  return String(text)
+    .split('\n')
+    .map((line) => line
+      .split(/,\s*/)
+      .map((fragment) => {
+        if (!fragment.trim()) return '';
+
+        if (isFirst) {
+          isFirst = false;
+          if (useIdea) return original.replace(/[.!?]+$/, '');
+        }
+        return translateFragment(fragment);
+      })
+      .filter(Boolean)
+      .join(', '))
+    .filter(Boolean)
+    .join('\n');
+}
+
+
+/* ────────── assets/js/ai/local-provider.js ────────── */
+
+/**
+ * Локальный провайдер: работает офлайн на встроенном движке.
+ * Используется по умолчанию и как запасной вариант, если API недоступно.
+ */
+
+
+
+
+
+
+
+/** Небольшая задержка, чтобы интерфейс вёл себя так же, как с реальным API. */
+async function think() {
+  const [min, max] = AI.localLatencyMs;
+  await sleep(randomInt(min, max));
+}
+
+const localProvider = {
+  id: 'local',
+
+  async generate({ idea, settings }) {
+    await think();
+    const result = buildPrompt({ idea, settings });
+    return { ...result, source: 'local' };
+  },
+
+  async improve({ prompt, multiline }) {
+    await think();
+    const result = enhancePrompt(prompt, multiline);
+    return { ...result, source: 'local' };
+  },
+
+  async variants({ idea, settings, count }) {
+    await think();
+    return { variants: buildVariants({ idea, settings, count }), source: 'local' };
+  },
+
+  async translate({ text }) {
+    await think();
+    return { text: translatePrompt(text), source: 'local' };
+  },
+
+  /** Обратный перевод: показать пользователю, что написано в промпте. */
+  async translateRu({ text, idea }) {
+    await think();
+    return { text: translateToRussian(text, { idea }), source: 'local' };
+  },
+
+  /** Перевод описания пользователя — используется до сборки промпта. */
+  async translateIdea({ idea }) {
+    await think();
+    return { text: translateToEnglish(idea), source: 'local' };
+  },
+};
+
+
+/* ────────── assets/js/ai/provider.js ────────── */
+
+/**
+ * Точка входа для всех AI-операций.
+ *
+ * UI обращается только сюда и ничего не знает о том, считается промпт
+ * локально или на сервере. Переключение — через AI.provider в config.js.
+ */
+
+
+
+
+
+const PROVIDERS = {
+  local: localProvider,
+  api: apiProvider,
+};
+
+function active() {
+  return PROVIDERS[AI.provider] || localProvider;
+}
+
+/** Выполняет операцию на выбранном провайдере, при сбое падая на локальный движок. */
+async function run(task, payload) {
+  const provider = active();
+
+  try {
+    return await provider[task](payload);
+  } catch (error) {
+    console.warn(`[ai] ${provider.id}.${task} не сработал:`, error.message);
+
+    if (provider.id !== 'local' && AI.fallbackToLocal) {
+      const result = await localProvider[task](payload);
+      return { ...result, degraded: true };
+    }
+    throw error;
+  }
+}
+
+const ai = {
+  generate:      (payload) => run('generate', payload),
+  improve:       (payload) => run('improve', payload),
+  variants:      (payload) => run('variants', payload),
+  translate:     (payload) => run('translate', payload),
+  translateRu:   (payload) => run('translateRu', payload),
+  translateIdea: (payload) => run('translateIdea', payload),
+  get providerId() {
+    return active().id;
+  },
+};
+
+
 /* ────────── assets/js/store.js ────────── */
 
 /**
@@ -2768,6 +3490,8 @@ function buildVariants({ idea, settings, count = 3 }) {
  * с подпиской на изменения, поэтому источник данных можно заменить на API,
  * не трогая UI.
  */
+
+
 
 
 const KEYS = {
@@ -2990,6 +3714,9 @@ const store = {
  */
 
 
+
+
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 async function hash(password, salt) {
@@ -3096,6 +3823,8 @@ function currentPlan() {
 /** Бесплатный лимит генераций: сколько осталось и можно ли генерировать. */
 
 
+
+
 /** Расход считается отдельно для гостя и для каждого аккаунта. */
 function scope() {
   return auth.current()?.id || 'guest';
@@ -3132,200 +3861,6 @@ function maxVariants() {
 }
 
 
-/* ────────── assets/js/ai/local-provider.js ────────── */
-
-/**
- * Локальный провайдер: работает офлайн на встроенном движке.
- * Используется по умолчанию и как запасной вариант, если API недоступно.
- */
-
-
-/** Небольшая задержка, чтобы интерфейс вёл себя так же, как с реальным API. */
-async function think() {
-  const [min, max] = AI.localLatencyMs;
-  await sleep(randomInt(min, max));
-}
-
-const localProvider = {
-  id: 'local',
-
-  async generate({ idea, settings }) {
-    await think();
-    const result = buildPrompt({ idea, settings });
-    return { ...result, source: 'local' };
-  },
-
-  async improve({ prompt, multiline }) {
-    await think();
-    const result = enhancePrompt(prompt, multiline);
-    return { ...result, source: 'local' };
-  },
-
-  async variants({ idea, settings, count }) {
-    await think();
-    return { variants: buildVariants({ idea, settings, count }), source: 'local' };
-  },
-
-  async translate({ text }) {
-    await think();
-    return { text: translatePrompt(text), source: 'local' };
-  },
-
-  /** Перевод описания пользователя — используется до сборки промпта. */
-  async translateIdea({ idea }) {
-    await think();
-    return { text: translateToEnglish(idea), source: 'local' };
-  },
-};
-
-
-/* ────────── assets/js/ai/api-provider.js ────────── */
-
-/**
- * Провайдер на основе HTTP API.
- *
- * Ожидаемый контракт бэкенда — один POST-эндпоинт (AI.endpoint):
- *
- *   POST /api/prompt
- *   {
- *     "task": "generate" | "improve" | "variants" | "translate",
- *     "idea": "футуристический город",        // для generate/variants
- *     "prompt": "a futuristic city, ...",     // для improve
- *     "text": "текст",                        // для translate
- *     "settings": { "style": "cyberpunk", "camera": "cinematic",
- *                   "lighting": "neon", "quality": "8k", "aspect": "16:9" },
- *     "count": 3                              // для variants
- *   }
- *
- *   200 OK
- *   { "prompt": "...", "multiline": "...", "negative": "...", "ratio": "--ar 16:9" }
- *   { "variants": [{ "name": "...", "prompt": "..." }] }
- *   { "text": "..." }
- *
- * Ключи моделей должны оставаться на сервере: браузер к ним не обращается.
- */
-
-
-async function request(task, payload) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AI.timeoutMs);
-
-  try {
-    const response = await fetch(AI.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task, ...payload }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`AI API вернул ${response.status}`);
-    }
-
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const apiProvider = {
-  id: 'api',
-
-  async generate({ idea, settings }) {
-    const data = await request('generate', { idea, settings });
-    return {
-      prompt: data.prompt,
-      multiline: data.multiline || data.prompt,
-      parts: data.parts || {},
-      negative: data.negative || '',
-      ratio: data.ratio || '',
-      source: 'api',
-    };
-  },
-
-  async improve({ prompt, multiline, settings }) {
-    const data = await request('improve', { prompt, multiline, settings });
-    return {
-      prompt: data.prompt,
-      multiline: data.multiline || data.prompt,
-      added: data.added || [],
-      source: 'api',
-    };
-  },
-
-  async variants({ idea, settings, count }) {
-    const data = await request('variants', { idea, settings, count });
-    return {
-      variants: (data.variants || []).map((item, index) => ({
-        id: item.id || `api-${index}`,
-        name: item.name || `Вариант ${index + 1}`,
-        prompt: item.prompt,
-        multiline: item.multiline || item.prompt,
-      })),
-      source: 'api',
-    };
-  },
-
-  async translate({ text }) {
-    const data = await request('translate', { text });
-    return { text: data.text, source: 'api' };
-  },
-
-  async translateIdea({ idea }) {
-    const data = await request('translate', { text: idea });
-    return { text: data.text, source: 'api' };
-  },
-};
-
-
-/* ────────── assets/js/ai/provider.js ────────── */
-
-/**
- * Точка входа для всех AI-операций.
- *
- * UI обращается только сюда и ничего не знает о том, считается промпт
- * локально или на сервере. Переключение — через AI.provider в config.js.
- */
-
-
-const PROVIDERS = {
-  local: localProvider,
-  api: apiProvider,
-};
-
-function active() {
-  return PROVIDERS[AI.provider] || localProvider;
-}
-
-/** Выполняет операцию на выбранном провайдере, при сбое падая на локальный движок. */
-async function run(task, payload) {
-  const provider = active();
-
-  try {
-    return await provider[task](payload);
-  } catch (error) {
-    console.warn(`[ai] ${provider.id}.${task} не сработал:`, error.message);
-
-    if (provider.id !== 'local' && AI.fallbackToLocal) {
-      const result = await localProvider[task](payload);
-      return { ...result, degraded: true };
-    }
-    throw error;
-  }
-}
-
-const ai = {
-  generate:      (payload) => run('generate', payload),
-  improve:       (payload) => run('improve', payload),
-  variants:      (payload) => run('variants', payload),
-  translate:     (payload) => run('translate', payload),
-  translateIdea: (payload) => run('translateIdea', payload),
-  get providerId() {
-    return active().id;
-  },
-};
-
-
 /* ────────── assets/js/ui/icons.js ────────── */
 
 /** Инлайновые SVG-иконки: без внешних зависимостей и лишних запросов. */
@@ -3339,6 +3874,7 @@ const icons = {
   sparkles: svg('<path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'),
   layers: svg('<path d="M12 2l9 5-9 5-9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/>'),
   globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/>'),
+  translate: svg('<path d="M4 5h10"/><path d="M9 3v2c0 4-2.5 7-5 8"/><path d="M6 10c1.5 2.5 4 4 6 4.5"/><path d="M12 21l4-9 4 9"/><path d="M13.5 18h5"/>'),
   star: svg('<path d="M12 3l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-2.9L6.7 19.6l1.1-6L3.4 9.4l6-.8z"/>'),
   trash: svg('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>'),
   camera: svg('<path d="M3 8h3l2-2h8l2 2h3v11H3z"/><circle cx="12" cy="13" r="3.5"/>'),
@@ -3357,92 +3893,14 @@ const icons = {
 const icon = (name) => icons[name] || '';
 
 
-/* ────────── assets/js/ui/toast.js ────────── */
-
-/** Всплывающие уведомления. */
-
-
-const ICONS = { success: 'check', error: 'alert', info: 'info' };
-
-function toast(message, type = 'info', duration = 2600) {
-  const root = $('#toastRoot');
-  if (!root) return;
-
-  const node = document.createElement('div');
-  node.className = `toast toast--${type}`;
-  node.innerHTML = `<span class="toast__icon">${icon(ICONS[type] || 'info')}</span><span>${message}</span>`;
-  root.appendChild(node);
-
-  setTimeout(() => {
-    node.classList.add('is-out');
-    node.addEventListener('animationend', () => node.remove(), { once: true });
-  }, duration);
-}
-
-
-/* ────────── assets/js/ui/modal.js ────────── */
-
-/** Модальные окна: на мобильных — шторка снизу, на десктопе — карточка по центру. */
-
-
-let lastFocused = null;
-
-function openModal({ title, subtitle = '', body, onMount }) {
-  const root = $('#modalRoot');
-  if (!root) return;
-
-  // Если окно уже открыто (например, из пейволла открывают регистрацию),
-  // запоминаем исходный фокус только один раз и не плодим обработчики.
-  if (root.hidden) lastFocused = document.activeElement;
-
-  root.innerHTML = `
-    <div class="modal" role="dialog" aria-modal="true" aria-label="${title}">
-      <div class="modal__grip" aria-hidden="true"></div>
-      <div class="modal__head">
-        <div>
-          <h2 class="modal__title">${title}</h2>
-          ${subtitle ? `<p class="modal__sub">${subtitle}</p>` : ''}
-        </div>
-        <button class="icon-btn modal__close" type="button" aria-label="Закрыть" data-modal-close>${icon('close')}</button>
-      </div>
-      <div class="modal__body">${body}</div>
-    </div>`;
-
-  root.hidden = false;
-  document.body.style.overflow = 'hidden';
-
-  root.querySelector('[data-modal-close]')?.addEventListener('click', closeModal);
-  root.addEventListener('click', onBackdrop);
-  document.addEventListener('keydown', onKeydown);
-
-  onMount?.(root.querySelector('.modal'));
-  root.querySelector('input, button:not([data-modal-close])')?.focus({ preventScroll: true });
-}
-
-function onBackdrop(event) {
-  if (event.target.id === 'modalRoot') closeModal();
-}
-
-function onKeydown(event) {
-  if (event.key === 'Escape') closeModal();
-}
-
-function closeModal() {
-  const root = $('#modalRoot');
-  if (!root || root.hidden) return;
-
-  root.hidden = true;
-  root.innerHTML = '';
-  root.removeEventListener('click', onBackdrop);
-  document.removeEventListener('keydown', onKeydown);
-  document.body.style.overflow = '';
-  lastFocused?.focus?.({ preventScroll: true });
-}
-
-
 /* ────────── assets/js/ui/components.js ────────── */
 
 /** Шаблоны разметки. Чистые функции: данные на входе — HTML на выходе. */
+
+
+
+
+
 
 
 /* ──────────────────────────  стили  ────────────────────────── */
@@ -3537,7 +3995,12 @@ function resultCard(entry, { isFavorite = false } = {}) {
         <button class="btn" type="button" data-action="translate">
           <span class="btn__label">${icon('globe')} Перевести на английский</span><span class="btn__spinner"></span>
         </button>
+        <button class="btn" type="button" data-action="translate-ru">
+          <span class="btn__label">${icon('translate')} Перевести на русский</span><span class="btn__spinner"></span>
+        </button>
       </div>
+
+      <div class="translation" id="translationBox" hidden></div>
 
       <div class="result__actions" style="grid-template-columns: 1fr 1fr; margin-top: 8px;">
         <button class="btn btn--sm" type="button" data-action="favorite">
@@ -3548,6 +4011,18 @@ function resultCard(entry, { isFavorite = false } = {}) {
 
       <div class="variants" id="variantList"></div>
     </article>`;
+}
+
+/** Блок с русским переводом промпта. */
+function translationCard(text) {
+  return `
+    <div class="translation__inner">
+      <p class="translation__head">${icon('translate')} Что написано в промпте</p>
+      <p class="translation__text">${escapeHtml(text)}</p>
+      <p class="translation__note">
+        Это перевод для понимания. Промпт остаётся английским — кнопка «Копировать» копирует именно его.
+      </p>
+    </div>`;
 }
 
 function variantCard(variant) {
@@ -3680,6 +4155,93 @@ function faqItems() {
 }
 
 
+/* ────────── assets/js/ui/modal.js ────────── */
+
+/** Модальные окна: на мобильных — шторка снизу, на десктопе — карточка по центру. */
+
+
+
+
+let lastFocused = null;
+
+function openModal({ title, subtitle = '', body, onMount }) {
+  const root = $('#modalRoot');
+  if (!root) return;
+
+  // Если окно уже открыто (например, из пейволла открывают регистрацию),
+  // запоминаем исходный фокус только один раз и не плодим обработчики.
+  if (root.hidden) lastFocused = document.activeElement;
+
+  root.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-label="${title}">
+      <div class="modal__grip" aria-hidden="true"></div>
+      <div class="modal__head">
+        <div>
+          <h2 class="modal__title">${title}</h2>
+          ${subtitle ? `<p class="modal__sub">${subtitle}</p>` : ''}
+        </div>
+        <button class="icon-btn modal__close" type="button" aria-label="Закрыть" data-modal-close>${icon('close')}</button>
+      </div>
+      <div class="modal__body">${body}</div>
+    </div>`;
+
+  root.hidden = false;
+  document.body.style.overflow = 'hidden';
+
+  root.querySelector('[data-modal-close]')?.addEventListener('click', closeModal);
+  root.addEventListener('click', onBackdrop);
+  document.addEventListener('keydown', onKeydown);
+
+  onMount?.(root.querySelector('.modal'));
+  root.querySelector('input, button:not([data-modal-close])')?.focus({ preventScroll: true });
+}
+
+function onBackdrop(event) {
+  if (event.target.id === 'modalRoot') closeModal();
+}
+
+function onKeydown(event) {
+  if (event.key === 'Escape') closeModal();
+}
+
+function closeModal() {
+  const root = $('#modalRoot');
+  if (!root || root.hidden) return;
+
+  root.hidden = true;
+  root.innerHTML = '';
+  root.removeEventListener('click', onBackdrop);
+  document.removeEventListener('keydown', onKeydown);
+  document.body.style.overflow = '';
+  lastFocused?.focus?.({ preventScroll: true });
+}
+
+
+/* ────────── assets/js/ui/toast.js ────────── */
+
+/** Всплывающие уведомления. */
+
+
+
+
+const ICONS = { success: 'check', error: 'alert', info: 'info' };
+
+function toast(message, type = 'info', duration = 2600) {
+  const root = $('#toastRoot');
+  if (!root) return;
+
+  const node = document.createElement('div');
+  node.className = `toast toast--${type}`;
+  node.innerHTML = `<span class="toast__icon">${icon(ICONS[type] || 'info')}</span><span>${message}</span>`;
+  root.appendChild(node);
+
+  setTimeout(() => {
+    node.classList.add('is-out');
+    node.addEventListener('animationend', () => node.remove(), { once: true });
+  }, duration);
+}
+
+
 /* ────────── assets/js/app.js ────────── */
 
 /**
@@ -3689,6 +4251,18 @@ function faqItems() {
  * Вся бизнес-логика вынесена в engine/ и ai/, здесь остаётся только
  * оркестрация и работа с DOM.
  */
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /* ──────────────────────────  состояние сессии  ────────────────────────── */
@@ -3863,6 +4437,36 @@ async function translateCurrent(button) {
     store.updateHistory(state.entry.id, { prompt: state.entry.prompt, multiline: state.entry.multiline });
     renderResult();
     toast('Промпт переведён на английский', 'success');
+  } catch {
+    toast('Не удалось перевести промпт', 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+/**
+ * Показывает русский перевод промпта под карточкой.
+ * Сам промпт не меняется: копируется и уходит в генератор английский текст.
+ */
+async function showRussian(button) {
+  if (!state.entry) return;
+
+  const box = $('#translationBox');
+  if (!box) return;
+
+  // Повторное нажатие сворачивает перевод.
+  if (!box.hidden) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+
+  setLoading(button, true);
+
+  try {
+    const { text } = await ai.translateRu({ text: state.entry.multiline || state.entry.prompt, idea: state.entry.idea });
+    box.innerHTML = translationCard(text);
+    box.hidden = false;
   } catch {
     toast('Не удалось перевести промпт', 'error');
   } finally {
@@ -4212,6 +4816,7 @@ function bindResultActions() {
       case 'improve':   improvePrompt(trigger); break;
       case 'variants':  makeVariants(trigger); break;
       case 'translate': translateCurrent(trigger); break;
+      case 'translate-ru': showRussian(trigger); break;
       case 'regenerate': generate(state.entry.idea); break;
       case 'open-account': openAccountModal(); break;
       case 'favorite': {

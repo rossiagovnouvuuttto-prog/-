@@ -40,6 +40,7 @@ export const ai = {
   improve:       (payload) => run('improve', payload),
   variants:      (payload) => run('variants', payload),
   translate:     (payload) => run('translate', payload),
+  translateRu:   (payload) => run('translateRu', payload),
   translateIdea: (payload) => run('translateIdea', payload),
   get providerId() {
     return active().id;

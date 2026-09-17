@@ -5,7 +5,7 @@
  *
  *   POST /api/prompt
  *   {
- *     "task": "generate" | "improve" | "variants" | "translate",
+ *     "task": "generate" | "improve" | "variants" | "translate" | "translate-ru",
  *     "idea": "футуристический город",        // для generate/variants
  *     "prompt": "a futuristic city, ...",     // для improve
  *     "text": "текст",                        // для translate
@@ -86,6 +86,11 @@ export const apiProvider = {
 
   async translate({ text }) {
     const data = await request('translate', { text });
+    return { text: data.text, source: 'api' };
+  },
+
+  async translateRu({ text, idea }) {
+    const data = await request('translate-ru', { text, idea });
     return { text: data.text, source: 'api' };
   },
 

@@ -5,59 +5,61 @@
  * результат в promptai.html — один файл, который открывается двойным кликом,
  * без сервера и без интернета.
  *
+ * Порядок модулей вычисляется из их импортов, поэтому новый файл
+ * достаточно просто импортировать — правки сборщика не нужны.
+ *
  * Запуск:  node build.mjs
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const read = (file) => readFileSync(join(root, file), 'utf8');
 
-/** Модули в порядке зависимостей: каждый следующий опирается на предыдущие. */
-const MODULES = [
-  'assets/js/config.js',
-  'assets/js/utils.js',
-  'assets/js/data/dictionary.js',
-  'assets/js/data/styles.js',
-  'assets/js/data/options.js',
-  'assets/js/engine/translator.js',
-  'assets/js/engine/prompt-builder.js',
-  'assets/js/store.js',
-  'assets/js/auth.js',
-  'assets/js/quota.js',
-  'assets/js/ai/local-provider.js',
-  'assets/js/ai/api-provider.js',
-  'assets/js/ai/provider.js',
-  'assets/js/ui/icons.js',
-  'assets/js/ui/toast.js',
-  'assets/js/ui/modal.js',
-  'assets/js/ui/components.js',
-  'assets/js/app.js',
-];
+const ENTRY = 'assets/js/app.js';
+const IMPORT_RE = /import\s[\s\S]*?from\s*['"]([^'"]+)['"];/g;
+
+/** Обход графа импортов: зависимости оказываются в списке раньше зависимых. */
+function collect(file, seen = new Set(), order = []) {
+  if (seen.has(file)) return order;
+  seen.add(file);
+
+  const source = read(file);
+  const base = dirname(file);
+
+  for (const [, specifier] of source.matchAll(IMPORT_RE)) {
+    if (!specifier.startsWith('.')) {
+      throw new Error(`${file}: внешний импорт «${specifier}» не поддерживается автономной сборкой`);
+    }
+    collect(relative(root, resolve(root, base, specifier)), seen, order);
+  }
+
+  order.push(file);
+  return order;
+}
 
 /** Снимает import/export: в одном файле модульные границы больше не нужны. */
 function flatten(source, file) {
   const body = source
-    .replace(/import\s[\s\S]*?from\s*['"][^'"]+['"];\n?/g, '')
+    .replace(IMPORT_RE, '')
     .replace(/^export\s+(?=(const|let|function|async|class)\b)/gm, '')
-    .trimEnd();
+    .trimEnd()
+    .replace(/^\n+/, '');
 
   return `\n/* ────────── ${file} ────────── */\n\n${body}\n`;
 }
 
-const bundle = MODULES.map((file) => flatten(read(file), file)).join('\n');
+const modules = collect(ENTRY);
+const bundle = modules.map((file) => flatten(read(file), file)).join('\n');
 const css = read('assets/css/styles.css');
 
-let html = read('index.html');
-
-// Внешние ресурсы заменяем встроенными.
 // Замена задаётся функцией, а не строкой: иначе `$$` и `$&` внутри кода
 // (например, в регулярках и в утилите $$) будут подставлены как спецсимволы.
 const insert = (text) => () => text;
 
-html = html
+const html = read('index.html')
   .replace('<link rel="manifest" href="manifest.webmanifest">\n', '')
   .replace(
     '<link rel="stylesheet" href="assets/css/styles.css">',
@@ -68,8 +70,7 @@ html = html
     insert(`<script>\n(() => {\n'use strict';\n${bundle}\n})();\n</script>`),
   );
 
-// Иконка в .webmanifest тоже больше не нужна — favicon уже встроен как data-URI.
 writeFileSync(join(root, 'promptai.html'), html, 'utf8');
 
-const size = (Buffer.byteLength(html) / 1024).toFixed(0);
-console.log(`promptai.html собран: ${MODULES.length} модулей, ${size} КБ`);
+console.log(`promptai.html собран: ${modules.length} модулей, ${(Buffer.byteLength(html) / 1024).toFixed(0)} КБ`);
+modules.forEach((file, index) => console.log(`  ${String(index + 1).padStart(2)}. ${file}`));
