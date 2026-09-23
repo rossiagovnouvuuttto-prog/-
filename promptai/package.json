@@ -5,9 +5,19 @@
   "description": "Генератор промптов для AI-изображений: описание на русском превращается в профессиональный английский промпт.",
   "type": "module",
   "scripts": {
-    "start": "python3 -m http.server 4173",
-    "dev": "python3 -m http.server 4173"
+    "start": "node server/server.mjs",
+    "build": "node build.mjs",
+    "test": "node tests/fragments.test.mjs"
   },
-  "keywords": ["ai", "prompt", "midjourney", "stable-diffusion", "image-generation"],
-  "license": "MIT"
+  "keywords": [
+    "ai",
+    "prompt",
+    "midjourney",
+    "stable-diffusion",
+    "image-generation"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
 }

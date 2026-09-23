@@ -497,6 +497,27 @@ img, svg { display: block; max-width: 100%; }
   color: var(--text-muted);
 }
 
+/* Индикатор подключённой модели */
+.engine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid rgba(110, 231, 183, .3);
+  background: rgba(110, 231, 183, .08);
+  color: var(--lime);
+  font-weight: 600;
+}
+.engine__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 8px var(--lime);
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+
 /* ============================================================
    Chips
    ============================================================ */

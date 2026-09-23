@@ -700,6 +700,26 @@ function bindChrome() {
 
 /* ──────────────────────────  инициализация  ────────────────────────── */
 
+/**
+ * Сообщает, что подключён настоящий AI.
+ *
+ * Если бэкенда нет, подсказка остаётся прежней: встроенный движок — это
+ * штатный режим, а не поломка, пугать пользователя нечем.
+ */
+async function showEngine() {
+  try {
+    const { info } = await ai.status();
+    if (!info?.model) return;
+
+    const hint = $('#engineHint');
+    if (!hint) return;
+
+    hint.innerHTML = `<span class="engine"><span class="engine__dot"></span>AI подключён: ${escapeHtml(info.model)}</span>`;
+  } catch {
+    /* молча остаёмся на встроенном движке */
+  }
+}
+
 function init() {
   $('#year').textContent = new Date().getFullYear();
 
@@ -720,6 +740,7 @@ function init() {
   bindChrome();
 
   observeReveals();
+  showEngine();
 
   // Состояние может измениться из другой вкладки — держим счётчики в актуальном виде.
   store.subscribe((event) => {

@@ -2,7 +2,9 @@
  * Точка входа для всех AI-операций.
  *
  * UI обращается только сюда и ничего не знает о том, считается промпт
- * локально или на сервере. Переключение — через AI.provider в config.js.
+ * локально или на сервере. В режиме 'auto' сайт один раз спрашивает бэкенд,
+ * жив ли он: если сервер с моделью не запущен (например, страницу открыли
+ * файлом с диска), всё продолжает работать на встроенном движке.
  */
 
 import { AI } from '../config.js';
@@ -14,13 +16,46 @@ const PROVIDERS = {
   api: apiProvider,
 };
 
-function active() {
-  return PROVIDERS[AI.provider] || localProvider;
+/** Что известно о бэкенде: null — ещё не проверяли. */
+let detected = null;
+let detection = null;
+
+/** Разовая проверка доступности бэкенда. */
+async function detect() {
+  if (AI.provider !== 'auto') {
+    return { provider: PROVIDERS[AI.provider] || localProvider, info: null };
+  }
+  if (detected) return detected;
+
+  detection ||= (async () => {
+    // На file:// запрос к /api/health невозможен в принципе, и браузер пишет
+    // в консоль ошибку. Проверяем только там, где бэкенд вообще может быть.
+    if (!/^https?:$/.test(globalThis.location?.protocol || '')) {
+      detected = { provider: localProvider, info: null };
+      return detected;
+    }
+
+    try {
+      const response = await fetch(AI.healthEndpoint, {
+        signal: AbortSignal.timeout(AI.healthTimeoutMs),
+      });
+      if (!response.ok) throw new Error(String(response.status));
+
+      const info = await response.json();
+      detected = { provider: apiProvider, info };
+    } catch {
+      // Бэкенда нет — это нормальный режим работы, не ошибка.
+      detected = { provider: localProvider, info: null };
+    }
+    return detected;
+  })();
+
+  return detection;
 }
 
 /** Выполняет операцию на выбранном провайдере, при сбое падая на локальный движок. */
 async function run(task, payload) {
-  const provider = active();
+  const { provider } = await detect();
 
   try {
     return await provider[task](payload);
@@ -41,8 +76,6 @@ export const ai = {
   variants:      (payload) => run('variants', payload),
   translate:     (payload) => run('translate', payload),
   translateRu:   (payload) => run('translateRu', payload),
-  translateIdea: (payload) => run('translateIdea', payload),
-  get providerId() {
-    return active().id;
-  },
+  /** Какой движок работает сейчас: { provider, info } — info есть только у бэкенда. */
+  status:        () => detect(),
 };

@@ -514,6 +514,27 @@ img, svg { display: block; max-width: 100%; }
   color: var(--text-muted);
 }
 
+/* Индикатор подключённой модели */
+.engine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid rgba(110, 231, 183, .3);
+  background: rgba(110, 231, 183, .08);
+  color: var(--lime);
+  font-weight: 600;
+}
+.engine__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 8px var(--lime);
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+
 /* ============================================================
    Chips
    ============================================================ */
@@ -1521,7 +1542,7 @@ img, svg { display: block; max-width: 100%; }
           </button>
         </form>
 
-        <p class="composer__hint">
+        <p class="composer__hint" id="engineHint">
           Пишите на русском или английском — AI сам переведёт и структурирует описание.
         </p>
       </div>
@@ -1680,16 +1701,21 @@ const APP = {
 /**
  * Настройки AI-провайдера.
  *
- * provider: 'local' — встроенный детерминированный движок (работает без сети).
- *           'api'   — запросы уходят на ваш бэкенд (см. assets/js/ai/api-provider.js).
+ * provider: 'auto'  — сайт сам проверяет, поднят ли бэкенд с настоящей моделью,
+ *                     и если нет, считает промпты встроенным движком;
+ *           'local' — всегда встроенный движок (работает без сети);
+ *           'api'   — всегда бэкенд (см. assets/js/ai/api-provider.js).
  *
- * Чтобы подключить реальный AI, достаточно поднять бэкенд с одним POST-эндпоинтом
- * и переключить provider на 'api'. Ключи моделей держите на сервере, не в браузере.
+ * Ключи моделей держите на сервере: браузер обращается только к своему
+ * эндпоинту и ключей не видит.
  */
 const AI = {
-  provider: 'local',
+  provider: 'auto',
   endpoint: '/api/prompt',
-  timeoutMs: 20000,
+  /** Проверка доступности бэкенда для режима 'auto'. */
+  healthEndpoint: '/api/health',
+  healthTimeoutMs: 2000,
+  timeoutMs: 90000,
   /** Куда падать, если удалённый провайдер недоступен. */
   fallbackToLocal: true,
   /** Искусственная задержка локального движка — чтобы UI ощущался «живым». */
@@ -3434,7 +3460,9 @@ const localProvider = {
  * Точка входа для всех AI-операций.
  *
  * UI обращается только сюда и ничего не знает о том, считается промпт
- * локально или на сервере. Переключение — через AI.provider в config.js.
+ * локально или на сервере. В режиме 'auto' сайт один раз спрашивает бэкенд,
+ * жив ли он: если сервер с моделью не запущен (например, страницу открыли
+ * файлом с диска), всё продолжает работать на встроенном движке.
  */
 
 
@@ -3446,13 +3474,46 @@ const PROVIDERS = {
   api: apiProvider,
 };
 
-function active() {
-  return PROVIDERS[AI.provider] || localProvider;
+/** Что известно о бэкенде: null — ещё не проверяли. */
+let detected = null;
+let detection = null;
+
+/** Разовая проверка доступности бэкенда. */
+async function detect() {
+  if (AI.provider !== 'auto') {
+    return { provider: PROVIDERS[AI.provider] || localProvider, info: null };
+  }
+  if (detected) return detected;
+
+  detection ||= (async () => {
+    // На file:// запрос к /api/health невозможен в принципе, и браузер пишет
+    // в консоль ошибку. Проверяем только там, где бэкенд вообще может быть.
+    if (!/^https?:$/.test(globalThis.location?.protocol || '')) {
+      detected = { provider: localProvider, info: null };
+      return detected;
+    }
+
+    try {
+      const response = await fetch(AI.healthEndpoint, {
+        signal: AbortSignal.timeout(AI.healthTimeoutMs),
+      });
+      if (!response.ok) throw new Error(String(response.status));
+
+      const info = await response.json();
+      detected = { provider: apiProvider, info };
+    } catch {
+      // Бэкенда нет — это нормальный режим работы, не ошибка.
+      detected = { provider: localProvider, info: null };
+    }
+    return detected;
+  })();
+
+  return detection;
 }
 
 /** Выполняет операцию на выбранном провайдере, при сбое падая на локальный движок. */
 async function run(task, payload) {
-  const provider = active();
+  const { provider } = await detect();
 
   try {
     return await provider[task](payload);
@@ -3473,10 +3534,8 @@ const ai = {
   variants:      (payload) => run('variants', payload),
   translate:     (payload) => run('translate', payload),
   translateRu:   (payload) => run('translateRu', payload),
-  translateIdea: (payload) => run('translateIdea', payload),
-  get providerId() {
-    return active().id;
-  },
+  /** Какой движок работает сейчас: { provider, info } — info есть только у бэкенда. */
+  status:        () => detect(),
 };
 
 
@@ -4943,6 +5002,26 @@ function bindChrome() {
 
 /* ──────────────────────────  инициализация  ────────────────────────── */
 
+/**
+ * Сообщает, что подключён настоящий AI.
+ *
+ * Если бэкенда нет, подсказка остаётся прежней: встроенный движок — это
+ * штатный режим, а не поломка, пугать пользователя нечем.
+ */
+async function showEngine() {
+  try {
+    const { info } = await ai.status();
+    if (!info?.model) return;
+
+    const hint = $('#engineHint');
+    if (!hint) return;
+
+    hint.innerHTML = `<span class="engine"><span class="engine__dot"></span>AI подключён: ${escapeHtml(info.model)}</span>`;
+  } catch {
+    /* молча остаёмся на встроенном движке */
+  }
+}
+
 function init() {
   $('#year').textContent = new Date().getFullYear();
 
@@ -4963,6 +5042,7 @@ function init() {
   bindChrome();
 
   observeReveals();
+  showEngine();
 
   // Состояние может измениться из другой вкладки — держим счётчики в актуальном виде.
   store.subscribe((event) => {

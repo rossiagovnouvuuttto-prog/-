@@ -51,7 +51,44 @@ function flatten(source, file) {
   return `\n/* ────────── ${file} ────────── */\n\n${body}\n`;
 }
 
+/**
+ * Имена верхнего уровня в модуле.
+ *
+ * В автономной сборке все модули попадают в одну область видимости, поэтому
+ * два одинаковых имени в разных файлах ломают страницу целиком
+ * («Identifier 'x' has already been declared»). Объявления в этих модулях
+ * не имеют отступа, так что regexp по началу строки их надёжно находит.
+ */
+function declarations(source) {
+  const names = [];
+  const pattern = /^(?:export\s+)?(?:const|let|var|class|(?:async\s+)?function)\s+([A-Za-z_$][\w$]*)/gm;
+
+  for (const [, name] of source.matchAll(pattern)) names.push(name);
+  return names;
+}
+
+/** Падаем на сборке, а не в браузере у пользователя. */
+function assertNoCollisions(files) {
+  const owners = new Map();
+  const clashes = [];
+
+  for (const file of files) {
+    for (const name of declarations(read(file))) {
+      if (owners.has(name)) clashes.push(`${name}: ${owners.get(name)} и ${file}`);
+      else owners.set(name, file);
+    }
+  }
+
+  if (clashes.length) {
+    throw new Error(
+      `в автономной сборке совпали имена верхнего уровня:\n  ${clashes.join('\n  ')}\n` +
+      'Переименуйте одно из них — модули склеиваются в общую область видимости.',
+    );
+  }
+}
+
 const modules = collect(ENTRY);
+assertNoCollisions(modules);
 const bundle = modules.map((file) => flatten(read(file), file)).join('\n');
 const css = read('assets/css/styles.css');
 
