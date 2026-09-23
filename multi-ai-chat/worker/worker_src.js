@@ -13,9 +13,10 @@
 
 const HF_DEFAULT_BASE = 'https://router.huggingface.co/v1';
 const DEEPSEEK_DEFAULT_BASE = 'https://api.deepseek.com/v1';
-const DEEPSEEK_PREFIX = 'deepseek:';
+const OLLAMA_DEFAULT_BASE = 'https://ollama.com/v1';
 const MODEL_ID_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$/;
-const DEEPSEEK_ID_RE = /^deepseek:[A-Za-z0-9._-]+$/;
+// Ollama tags carry their own colon, as in "ollama:gpt-oss:120b-cloud".
+const PREFIXED_ID_RE = /^(deepseek|ollama):[A-Za-z0-9._:-]+$/;
 const MAX_MESSAGES = 120;
 const MAX_CHARS = 120000;
 const FEATURED_TTL_MS = 300000;
@@ -29,19 +30,42 @@ const cfg = (env) => ({
   baseUrl: (env.HF_BASE_URL || HF_DEFAULT_BASE).replace(/\/+$/, ''),
   dsKey: (env.DEEPSEEK_API_KEY || '').trim(),
   dsBaseUrl: (env.DEEPSEEK_BASE_URL || DEEPSEEK_DEFAULT_BASE).replace(/\/+$/, ''),
+  olKey: (env.OLLAMA_API_KEY || '').trim(),
+  olBaseUrl: (env.OLLAMA_BASE_URL || OLLAMA_DEFAULT_BASE).replace(/\/+$/, ''),
   timeout: Number(env.HF_TIMEOUT || 120) * 1000,
 });
 
+const PROVIDERS = [
+  { name: 'deepseek', prefix: 'deepseek:', label: 'DeepSeek',
+    baseOf: (c) => c.dsBaseUrl, keyOf: (c) => c.dsKey, env: 'DEEPSEEK_API_KEY' },
+  { name: 'ollama', prefix: 'ollama:', label: 'Ollama',
+    baseOf: (c) => c.olBaseUrl, keyOf: (c) => c.olKey, env: 'OLLAMA_API_KEY' },
+];
+
 /** Where a model id goes, and under whose key. */
 function routeFor(modelId, conf) {
-  if (modelId.startsWith(DEEPSEEK_PREFIX)) {
-    return {
-      provider: 'deepseek', baseUrl: conf.dsBaseUrl, key: conf.dsKey,
-      model: modelId.slice(DEEPSEEK_PREFIX.length),
-    };
+  for (const p of PROVIDERS) {
+    if (modelId.startsWith(p.prefix)) {
+      return {
+        provider: p.name, label: p.label, env: p.env,
+        baseUrl: p.baseOf(conf), key: p.keyOf(conf),
+        model: modelId.slice(p.prefix.length),
+      };
+    }
   }
-  return { provider: 'hf', baseUrl: conf.baseUrl, key: conf.token, model: modelId };
+  return {
+    provider: 'hf', label: 'Hugging Face', env: 'HF_TOKEN',
+    baseUrl: conf.baseUrl, key: conf.token, model: modelId,
+  };
 }
+
+/** How a model name is compared against a provider's listing. Only the
+    Hugging Face router appends ":provider"; elsewhere a colon is part of
+    the tag, so stripping it would break the match. */
+const normId = (provider, model) => {
+  const name = String(model).trim().toLowerCase();
+  return provider === 'hf' ? name.split(':', 1)[0] : name;
+};
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -68,9 +92,10 @@ function extractHfMessage(body) {
 function classifyHttpError(status, body, provider = 'hf') {
   const low = (body || '').toLowerCase();
 
-  if (provider === 'deepseek') {
+  if (provider !== 'hf') {
+    const who = provider === 'ollama' ? 'Ollama' : 'DeepSeek';
     if (status === 401 || status === 403) {
-      return { code: 'bad_token', message: 'Неверный ключ DeepSeek. Проверьте его в настройках.' };
+      return { code: 'bad_token', message: `Неверный ключ ${who}. Проверьте его в настройках.` };
     }
     if (status === 402) {
       return {
@@ -79,10 +104,10 @@ function classifyHttpError(status, body, provider = 'hf') {
       };
     }
     if (status === 429) {
-      return { code: 'rate_limit', message: 'Превышен лимит запросов DeepSeek. Подождите немного.' };
+      return { code: 'rate_limit', message: `Превышен лимит запросов ${who}. Подождите немного.` };
     }
     if (status === 404) {
-      return { code: 'model_unavailable', message: 'Такой модели нет в DeepSeek API.' };
+      return { code: 'model_unavailable', message: `Такой модели нет в ${who}.` };
     }
   }
 
@@ -173,18 +198,18 @@ function parseRequest(payload) {
 
 /** Business-level checks -> reported as an SSE error event, like app.py. */
 function businessError(req, conf) {
-  if (!MODEL_ID_RE.test(req.model) && !DEEPSEEK_ID_RE.test(req.model)) {
+  if (!MODEL_ID_RE.test(req.model) && !PREFIXED_ID_RE.test(req.model)) {
     return {
       code: 'bad_model_id',
-      message: 'Некорректный Model ID. Формат: owner/name или deepseek:имя-модели',
+      message: 'Некорректный Model ID. Формат: owner/name, deepseek:имя или ollama:имя',
     };
   }
-  if (!routeFor(req.model, conf).key) {
+  const dest = routeFor(req.model, conf);
+  if (!dest.key) {
     return {
       code: 'no_token',
-      message: req.model.startsWith(DEEPSEEK_PREFIX)
-        ? 'На сервере не задан ключ DeepSeek (DEEPSEEK_API_KEY).'
-        : 'На сервере не задан HF_TOKEN. Добавьте его в секреты хостинга и перезапустите приложение.',
+      message: `На сервере не задан ключ ${dest.label} (${dest.env}). `
+             + 'Добавьте его в секреты хостинга и перезапустите приложение.',
     };
   }
   if (req.messages.length > MAX_MESSAGES) {
@@ -359,9 +384,7 @@ async function completeOnce(req, conf) {
 }
 
 /* ============== Featured models ============== */
-const baseId = (id) => String(id).split(':', 1)[0].trim().toLowerCase();
-
-async function fetchServedIds(baseUrl, key) {
+async function fetchServedIds(provider, baseUrl, key) {
   try {
     const guard = withTimeout(20000);
     const resp = await fetch(`${baseUrl}/models`, {
@@ -376,7 +399,7 @@ async function fetchServedIds(baseUrl, key) {
     const served = new Set();
     for (const row of rows) {
       const id = row && typeof row === 'object' ? row.id : row;
-      if (typeof id === 'string' && id) served.add(baseId(id));
+      if (typeof id === 'string' && id) served.add(normId(provider, id));
     }
     return served.size ? served : null;
   } catch { return null; }
@@ -420,22 +443,32 @@ async function resolveFeatured(conf, force) {
   // Ask each provider that has a key which models it serves. A provider with
   // no key needs no call: its cards are offline by definition.
   const listings = {
-    hf: conf.token ? await fetchServedIds(conf.baseUrl, conf.token) : null,
-    deepseek: conf.dsKey ? await fetchServedIds(conf.dsBaseUrl, conf.dsKey) : null,
+    hf: conf.token ? await fetchServedIds('hf', conf.baseUrl, conf.token) : null,
   };
+  for (const p of PROVIDERS) {
+    const key = p.keyOf(conf);
+    listings[p.name] = key ? await fetchServedIds(p.name, p.baseOf(conf), key) : null;
+  }
 
   const result = await Promise.all(list.map(async (entry) => {
     const cands = entry.candidates || [];
     const first = cands[0] || '';
+    const provider = entry.provider || 'hf';
     if (!first || !routeFor(first, conf).key) return card(entry, first, 'offline');
 
-    const served = listings[entry.provider || 'hf'];
+    const served = listings[provider];
     if (served) {
-      const chosen = cands.find((c) => served.has(baseId(routeFor(c, conf).model)));
-      return card(entry, chosen || first, chosen ? 'online' : 'offline');
+      const chosen = cands.find((c) => served.has(normId(provider, routeFor(c, conf).model)));
+      if (chosen) return card(entry, chosen, 'online');
+      // Ollama's cloud tags move, so a card may opt into using whatever the
+      // account does serve rather than going dark.
+      if (entry.fallbackToListing) {
+        const spec = PROVIDERS.find((p) => p.name === provider);
+        return card(entry, (spec ? spec.prefix : '') + [...served].sort()[0], 'online');
+      }
+      return card(entry, first, 'offline');
     }
 
-    // Listing unavailable - fall back to probing the top candidates.
     for (const cand of cands.slice(0, 2)) {
       if (await probeModel(conf, cand)) return card(entry, cand, 'online');
     }
@@ -472,7 +505,10 @@ export default {
       return json({
         ok: true,
         token_configured: Boolean(conf.token),
+        providers: Object.fromEntries([['hf', Boolean(conf.token)]].concat(
+          PROVIDERS.map((p) => [p.name, Boolean(p.keyOf(conf))]))),
         deepseek_configured: Boolean(conf.dsKey),
+        ollama_configured: Boolean(conf.olKey),
         base_url: conf.baseUrl,
       });
     }

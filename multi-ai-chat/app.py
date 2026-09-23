@@ -32,17 +32,39 @@ HF_TOKEN = (os.environ.get("HF_TOKEN") or "").strip()
 HF_BASE_URL = (os.environ.get("HF_BASE_URL") or "https://router.huggingface.co/v1").rstrip("/")
 HF_TIMEOUT = float(os.environ.get("HF_TIMEOUT") or 120)
 
-# DeepSeek's own API is OpenAI-compatible too, so it plugs into the same code
-# path - only the base URL and the key differ.
-DEEPSEEK_KEY = (os.environ.get("DEEPSEEK_API_KEY") or "").strip()
-DEEPSEEK_BASE_URL = (os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1").rstrip("/")
-DEEPSEEK_PREFIX = "deepseek:"
+# Every provider speaks the OpenAI-compatible shape, so adding one is data:
+# a prefix that routes to it, a base URL and a key. "hf" has no prefix and is
+# the default, which keeps plain "owner/name" ids working as before.
+PROVIDERS: dict[str, dict[str, str]] = {
+    "hf": {
+        "prefix": "",
+        "base_url": HF_BASE_URL,
+        "key": HF_TOKEN,
+        "label": "Hugging Face",
+        "env": "HF_TOKEN",
+    },
+    "deepseek": {
+        "prefix": "deepseek:",
+        "base_url": (os.environ.get("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1").rstrip("/"),
+        "key": (os.environ.get("DEEPSEEK_API_KEY") or "").strip(),
+        "label": "DeepSeek",
+        "env": "DEEPSEEK_API_KEY",
+    },
+    "ollama": {
+        "prefix": "ollama:",
+        "base_url": (os.environ.get("OLLAMA_BASE_URL") or "https://ollama.com/v1").rstrip("/"),
+        "key": (os.environ.get("OLLAMA_API_KEY") or "").strip(),
+        "label": "Ollama",
+        "env": "OLLAMA_API_KEY",
+    },
+}
 
 # A Hugging Face Model ID looks like "owner/name" or, on the router, may carry
 # an explicit provider suffix such as "owner/name:together".
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._\-]+/[A-Za-z0-9._\-]+(:[A-Za-z0-9._\-]+)?$")
-# "deepseek:deepseek-chat" routes to DeepSeek instead.
-DEEPSEEK_ID_RE = re.compile(r"^deepseek:[A-Za-z0-9._\-]+$")
+# A prefixed id routes elsewhere. Ollama tags carry their own colon, as in
+# "ollama:gpt-oss:120b-cloud", so colons are allowed after the prefix.
+PREFIXED_ID_RE = re.compile(r"^(deepseek|ollama):[A-Za-z0-9._:\-]+$")
 
 
 class Route(NamedTuple):
@@ -52,13 +74,28 @@ class Route(NamedTuple):
     base_url: str
     key: str
     model: str
+    label: str
 
 
 def route_for(model_id: str) -> Route:
-    if model_id.startswith(DEEPSEEK_PREFIX):
-        return Route("deepseek", DEEPSEEK_BASE_URL, DEEPSEEK_KEY,
-                     model_id[len(DEEPSEEK_PREFIX):])
-    return Route("hf", HF_BASE_URL, HF_TOKEN, model_id)
+    for name, spec in PROVIDERS.items():
+        prefix = spec["prefix"]
+        if prefix and model_id.startswith(prefix):
+            return Route(name, spec["base_url"], spec["key"],
+                         model_id[len(prefix):], spec["label"])
+    hf = PROVIDERS["hf"]
+    return Route("hf", hf["base_url"], hf["key"], model_id, hf["label"])
+
+
+def norm_id(provider: str, model: str) -> str:
+    """How a model name is compared against a provider's listing.
+
+    Only the Hugging Face router appends ":provider" to an id; elsewhere a
+    colon is part of the tag, so stripping it would break the match.
+    """
+    name = model.strip().lower()
+    return name.split(":", 1)[0] if provider == "hf" else name
+
 
 MAX_MESSAGES = 120
 MAX_CHARS = 120_000
@@ -115,19 +152,22 @@ def classify_http_error(status: int, body: str, provider: str = "hf") -> ChatErr
     """Map an upstream HTTP response onto a friendly Russian message."""
     low = body.lower()
 
-    if provider == "deepseek":
+    # Anything that is not Hugging Face speaks for itself, by name.
+    if provider != "hf":
+        who = PROVIDERS.get(provider, {}).get("label", provider)
         if status in (401, 403):
-            return ChatError("bad_token", "Неверный ключ DeepSeek. Проверьте его в настройках.", status)
+            return ChatError("bad_token", f"Неверный ключ {who}. Проверьте его в настройках.", status)
         if status == 402:
             return ChatError(
                 "quota",
-                "Недостаточно средств на балансе DeepSeek. Пополните его на platform.deepseek.com.",
+                f"Недостаточно средств на балансе {who}. Пополните его на platform.deepseek.com."
+                if provider == "deepseek" else f"Исчерпан лимит {who}.",
                 status,
             )
         if status == 429:
-            return ChatError("rate_limit", "Превышен лимит запросов DeepSeek. Подождите немного.", status)
+            return ChatError("rate_limit", f"Превышен лимит запросов {who}. Подождите немного.", status)
         if status == 404:
-            return ChatError("model_unavailable", "Такой модели нет в DeepSeek API.", status)
+            return ChatError("model_unavailable", f"Такой модели нет в {who}.", status)
 
     if status in (401, 403):
         if "gated" in low or "awaiting approval" in low or "accept" in low and "license" in low:
@@ -206,19 +246,19 @@ def sse(event: dict[str, Any]) -> str:
 
 
 def validate(req: ChatRequest) -> Route:
-    if not (MODEL_ID_RE.match(req.model) or DEEPSEEK_ID_RE.match(req.model)):
+    if not (MODEL_ID_RE.match(req.model) or PREFIXED_ID_RE.match(req.model)):
         raise ChatError(
             "bad_model_id",
-            "Некорректный Model ID. Формат: owner/name или deepseek:имя-модели",
+            "Некорректный Model ID. Формат: owner/name, deepseek:имя или ollama:имя",
             400,
         )
     dest = route_for(req.model)
     if not dest.key:
+        env = PROVIDERS[dest.provider]["env"]
         raise ChatError(
             "no_token",
-            "На сервере не задан ключ DeepSeek (DEEPSEEK_API_KEY)."
-            if dest.provider == "deepseek"
-            else "На сервере не задан HF_TOKEN. Добавьте его в секреты хостинга и перезапустите приложение.",
+            f"На сервере не задан ключ {dest.label} ({env}). "
+            "Добавьте его в секреты хостинга и перезапустите приложение.",
             503,
         )
     if len(req.messages) > MAX_MESSAGES:
@@ -372,18 +412,13 @@ FEATURED_TTL = 300.0
 _featured_cache: dict[str, Any] = {"at": 0.0, "data": None}
 
 
-def _base_id(model_id: str) -> str:
-    """Strips a provider suffix: 'owner/name:together' -> 'owner/name'."""
-    return model_id.split(":", 1)[0].strip().lower()
-
-
-async def fetch_served_ids(client: httpx.AsyncClient,
-                           base_url: str = "", key: str = "") -> set[str] | None:
+async def fetch_served_ids(client: httpx.AsyncClient, provider: str) -> set[str] | None:
     """Model IDs the provider currently serves, or None if the listing failed."""
+    spec = PROVIDERS[provider]
     try:
         resp = await client.get(
-            f"{base_url or HF_BASE_URL}/models",
-            headers={"Authorization": f"Bearer {key or HF_TOKEN}"},
+            f"{spec['base_url']}/models",
+            headers={"Authorization": f"Bearer {spec['key']}"},
         )
         if resp.status_code >= 400:
             log.warning("model listing returned %s", resp.status_code)
@@ -401,7 +436,7 @@ async def fetch_served_ids(client: httpx.AsyncClient,
     for row in rows:
         ident = row.get("id") if isinstance(row, dict) else row
         if isinstance(ident, str) and ident:
-            served.add(_base_id(ident))
+            served.add(norm_id(provider, ident))
     return served or None
 
 
@@ -452,20 +487,29 @@ async def resolve_featured(force: bool = False) -> list[dict[str, Any]]:
         # Ask each provider that has a key which models it serves. A provider
         # with no key needs no call: its cards are offline by definition.
         listings: dict[str, set[str] | None] = {}
-        for provider, base, key in (("hf", HF_BASE_URL, HF_TOKEN),
-                                    ("deepseek", DEEPSEEK_BASE_URL, DEEPSEEK_KEY)):
-            listings[provider] = await fetch_served_ids(client, base, key) if key else None
+        for name, spec in PROVIDERS.items():
+            listings[name] = await fetch_served_ids(client, name) if spec["key"] else None
 
         async def resolve_one(entry: dict[str, Any]) -> dict[str, Any]:
             cands = entry.get("candidates") or []
             first = cands[0] if cands else ""
+            provider = entry.get("provider", "hf")
             if not first or not route_for(first).key:
                 return card(entry, first, "offline")
 
-            served = listings.get(entry.get("provider", "hf"))
+            served = listings.get(provider)
             if served:
-                chosen = next((c for c in cands if _base_id(route_for(c).model) in served), None)
-                return card(entry, chosen or first, "online" if chosen else "offline")
+                chosen = next(
+                    (c for c in cands if norm_id(provider, route_for(c).model) in served), None)
+                if chosen:
+                    return card(entry, chosen, "online")
+                # Ollama's cloud tags move, so a card may opt into using
+                # whatever the account does serve rather than going dark.
+                if entry.get("fallbackToListing"):
+                    prefix = PROVIDERS[provider]["prefix"]
+                    pick = sorted(served)[0]
+                    return card(entry, f"{prefix}{pick}", "online")
+                return card(entry, first, "offline")
 
             # Listing unavailable - fall back to probing the top candidates.
             for cand in cands[:2]:
@@ -493,7 +537,9 @@ async def health() -> dict[str, Any]:
     return {
         "ok": True,
         "token_configured": bool(HF_TOKEN),
-        "deepseek_configured": bool(DEEPSEEK_KEY),
+        "providers": {name: bool(spec["key"]) for name, spec in PROVIDERS.items()},
+        "deepseek_configured": bool(PROVIDERS["deepseek"]["key"]),
+        "ollama_configured": bool(PROVIDERS["ollama"]["key"]),
         "base_url": HF_BASE_URL,
     }
 

@@ -26,11 +26,11 @@ short_description: Чат с нейросетями Hugging Face — DeepSeek, Q
 
 ## Возможности
 
-- **Пять карточек на старте** — DeepSeek, Qwen, Llama, Mistral и DeepSeek API:
+- **Шесть карточек на старте** — DeepSeek, Qwen, Llama, Mistral, DeepSeek API и Ollama:
   иконка, название, краткое описание и живой статус Online / Offline.
   Один клик выбирает модель для чата
-- **Два провайдера** — Hugging Face и собственный API DeepSeek. Модель с префиксом
-  `deepseek:` уходит на api.deepseek.com со своим ключом, остальные — на HF
+- **Три провайдера** — Hugging Face, DeepSeek API и Ollama Cloud. Префикс в
+  Model ID решает, куда уйдёт запрос и под каким ключом
 - **Выбор модели** — 24 модели в 8 категориях + любая своя по Hugging Face Model ID
 - **Стриминг** — ответ печатается по мере генерации, есть кнопка «Остановить»
 - **Markdown** — заголовки, списки, таблицы, цитаты, ссылки, блоки кода с подсветкой
@@ -59,21 +59,33 @@ short_description: Чат с нейросетями Hugging Face — DeepSeek, Q
 массив `THEMES` в `static/app.js`, блок `:root[data-theme=...]` в
 `static/styles.css` и полоска-образец `.themes button[data-t=...] .t-swatch`.
 
-## Два провайдера
+## Три провайдера
 
 Маршрут задаёт сам Model ID, поэтому фронтенду о провайдерах знать не нужно:
 
 ```
-deepseek-ai/DeepSeek-V3-0324   -> Hugging Face, ключ HF_TOKEN
-deepseek:deepseek-chat         -> api.deepseek.com, ключ DEEPSEEK_API_KEY
+deepseek-ai/DeepSeek-V3-0324   -> Hugging Face,      ключ HF_TOKEN
+deepseek:deepseek-chat         -> api.deepseek.com,  ключ DEEPSEEK_API_KEY
+ollama:gpt-oss:120b-cloud      -> ollama.com,        ключ OLLAMA_API_KEY
 ```
 
-Статусы карточек опрашиваются у каждого провайдера отдельно и своим ключом:
-нет ключа — карточка офлайн, лишних запросов не делается. Ошибки тоже разные:
-402 от DeepSeek читается как «пополните баланс», а не как код ошибки.
+Провайдеры описаны таблицей `PROVIDERS` (префикс, базовый URL, ключ, название),
+одинаковой во всех трёх сборках — добавить четвёртого можно одной записью.
 
-**API DeepSeek платный** — бесплатного лимита там нет, нужен положительный
-баланс на platform.deepseek.com.
+Второе двоеточие у Ollama — часть тега модели, а не разделитель, поэтому при
+сравнении со списком моделей оно обрезается только для Hugging Face, где
+`:провайдер` действительно суффикс роутера.
+
+Статусы опрашиваются у каждого провайдера отдельно и своим ключом: нет ключа —
+карточка офлайн, лишних запросов не делается. Ошибки называют виновника:
+402 от DeepSeek читается как «пополните баланс», а не как голый код.
+
+Теги облачных моделей Ollama со временем меняются, поэтому у этой карточки
+стоит `fallbackToListing` — если ни один кандидат не совпал, берётся любая
+модель, которую аккаунт реально отдаёт, вместо мёртвой карточки.
+
+**API DeepSeek платный** — бесплатного лимита нет, нужен положительный баланс
+на platform.deepseek.com.
 
 ## Как выбирается рабочая модель
 
@@ -104,7 +116,7 @@ Mistral  : Mistral-7B-Instruct-v0.3 → Mistral-Small-24B-Instruct-2501 → Mixt
 | Hugging Face Space | Settings → Variables and secrets → **New secret** → `HF_TOKEN` |
 | GitHub Actions (автодеплой) | Settings → Secrets and variables → Actions → `HF_TOKEN` |
 | Cloudflare Worker | Settings → Variables and Secrets → тип **Secret** → `HF_TOKEN` |
-| Расширение Chrome | Настройки в самом чате → поля «Токен Hugging Face» и «Ключ DeepSeek» (хранилище браузера) |
+| Расширение Chrome | Настройки в чате → поля «Токен Hugging Face», «Ключ Ollama» и «Ключ DeepSeek» (хранилище браузера) |
 | Локально | `export HF_TOKEN=hf_...` или файл `.env` (см. `.env.example`) |
 
 Токен не попадает ни в HTML, ни в JavaScript, ни в репозиторий. Проверка:
@@ -247,6 +259,8 @@ APP_URL=http://127.0.0.1:8790 python3 ../tests/test_backend.py
 | `HF_TIMEOUT` | `120` | Таймаут запроса, секунд |
 | `DEEPSEEK_API_KEY` | — | Ключ DeepSeek. Без него карточка «DeepSeek API» офлайн |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/v1` | Точка входа DeepSeek |
+| `OLLAMA_API_KEY` | — | Ключ Ollama Cloud. Без него карточка «Ollama» офлайн |
+| `OLLAMA_BASE_URL` | `https://ollama.com/v1` | Точка входа Ollama |
 
 ## Тесты
 

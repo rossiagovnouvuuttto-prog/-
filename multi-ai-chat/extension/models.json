@@ -65,6 +65,21 @@
         "deepseek:deepseek-chat",
         "deepseek:deepseek-reasoner"
       ]
+    },
+    {
+      "key": "ollama",
+      "provider": "ollama",
+      "name": "Ollama",
+      "icon": "🦙",
+      "desc": "Облачные модели Ollama",
+      "type": "ollama",
+      "candidates": [
+        "ollama:gpt-oss:120b-cloud",
+        "ollama:deepseek-v3.1:671b-cloud",
+        "ollama:qwen3-coder:480b-cloud",
+        "ollama:gpt-oss:20b-cloud"
+      ],
+      "fallbackToListing": true
     }
   ],
   "categories": [
@@ -109,6 +124,33 @@
           "id": "deepseek:deepseek-reasoner",
           "name": "DeepSeek Reasoner",
           "desc": "Режим рассуждений R1"
+        }
+      ]
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "icon": "🦙",
+      "models": [
+        {
+          "id": "ollama:gpt-oss:120b-cloud",
+          "name": "GPT-OSS 120B",
+          "desc": "Крупная открытая модель"
+        },
+        {
+          "id": "ollama:gpt-oss:20b-cloud",
+          "name": "GPT-OSS 20B",
+          "desc": "Легче и быстрее"
+        },
+        {
+          "id": "ollama:deepseek-v3.1:671b-cloud",
+          "name": "DeepSeek V3.1 671B",
+          "desc": "Флагман DeepSeek в облаке Ollama"
+        },
+        {
+          "id": "ollama:qwen3-coder:480b-cloud",
+          "name": "Qwen3 Coder 480B",
+          "desc": "Заточена под код"
         }
       ]
     },

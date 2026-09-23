@@ -22,8 +22,10 @@ EXT = ROOT / "extension"
 CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 MOCK_BASE = "http://127.0.0.1:8899/v1"
 DS_BASE = "http://127.0.0.1:8899/ds/v1"
+OL_BASE = "http://127.0.0.1:8899/ol/v1"
 FAKE_TOKEN = "hf_faketokenfortesting1234567890"
 FAKE_DS_KEY = "sk-faketestkey1234567890abcd"
+FAKE_OL_KEY = "ol-faketestkey1234567890abcd"
 
 SHOTS = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/ext-shots")
 SHOTS.mkdir(parents=True, exist_ok=True)
@@ -77,12 +79,12 @@ with sync_playwright() as pw:
 
     check("chat page opens from the extension", page.title() == "Multi AI Chat", page.title())
     check("welcome screen renders", page.locator(".welcome h1").inner_text() == "Multi AI Chat")
-    check("five starter cards", page.locator(".welcome .starter").count() == 5,
+    check("six starter cards", page.locator(".welcome .starter").count() == 6,
           str(page.locator(".welcome .starter").count()))
 
     print("\n== without a token ==")
-    statuses = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(5)]
-    check("all cards read Offline", statuses == ["Offline"] * 5, str(statuses))
+    statuses = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(6)]
+    check("all cards read Offline", statuses == ["Offline"] * 6, str(statuses))
     check("status bar warns", "HF_TOKEN" in page.inner_text("#modelStatus"), page.inner_text("#modelStatus"))
     toast = page.locator(".toast.err").first
     check("hint points at Settings, not hosting",
@@ -97,6 +99,9 @@ with sync_playwright() as pw:
     check("DeepSeek key field present", page.locator("#deepseekKey").count() == 1)
     check("DeepSeek key field is masked",
           page.get_attribute("#deepseekKey", "type") == "password")
+    check("Ollama key field present", page.locator("#ollamaKey").count() == 1)
+    check("Ollama key field is masked",
+          page.get_attribute("#ollamaKey", "type") == "password")
     page.screenshot(path=str(SHOTS / "E2-settings.png"))
 
     # Point the shim at the stand-in router first, so the refresh that entering
@@ -108,18 +113,29 @@ with sync_playwright() as pw:
     stored = page.evaluate("async () => (await chrome.storage.local.get(['hfToken'])).hfToken")
     check("token saved to extension storage", stored == FAKE_TOKEN, str(stored))
 
-    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(5)]
+    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(6)]
     check("cards go live without a page reload", live.count("Online") == 3, str(live))
-    check("the DeepSeek card waits for its own key", live[4] == "Offline", str(live))
+    check("the other providers wait for their own keys",
+          live[4] == "Offline" and live[5] == "Offline", str(live))
 
     # now the second provider
     page.evaluate("base => chrome.storage.local.set({ deepseekBaseUrl: base })", DS_BASE)
     page.fill("#deepseekKey", FAKE_DS_KEY)
     page.wait_for_timeout(2500)
-    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(5)]
+    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(6)]
     check("DeepSeek card goes online with its key", live[4] == "Online", str(live))
     ds_id = page.locator(".welcome .starter .s-id").nth(4).inner_text()
     check("DeepSeek card uses a prefixed id", ds_id.startswith("deepseek:"), ds_id)
+
+    # and the third provider
+    page.evaluate("base => chrome.storage.local.set({ ollamaBaseUrl: base })", OL_BASE)
+    page.fill("#ollamaKey", FAKE_OL_KEY)
+    page.wait_for_timeout(2500)
+    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(6)]
+    check("Ollama card goes online with its key", live[5] == "Online", str(live))
+    ol_id = page.locator(".welcome .starter .s-id").nth(5).inner_text()
+    check("Ollama id keeps its tag colon",
+          ol_id.startswith("ollama:") and ":" in ol_id[len("ollama:"):], ol_id)
 
     page.click("#settingsModal [data-close]")
     page.reload(wait_until="networkidle")

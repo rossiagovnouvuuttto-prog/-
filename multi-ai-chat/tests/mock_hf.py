@@ -167,6 +167,39 @@ async def stream_answer(model: str):
     yield "data: [DONE]\n\n"
 
 
+# ---------------------------------------------------------------------------
+# Ollama Cloud, under /ol/v1. Its tags carry a colon, which is what proves the
+# router keeps "ollama:gpt-oss:120b-cloud" intact instead of cutting the tag.
+# ---------------------------------------------------------------------------
+OL_SERVED = {"gpt-oss:20b-cloud", "qwen3-coder:480b-cloud"}
+
+
+@app.get("/ol/v1/models")
+async def ol_models():
+    if os.environ.get("MOCK_OL_NO_LISTING"):
+        return JSONResponse(status_code=500, content={"error": {"message": "listing down"}})
+    return {"object": "list", "data": [{"id": m, "object": "model"} for m in sorted(OL_SERVED)]}
+
+
+@app.post("/ol/v1/chat/completions")
+async def ol_completions(request: Request):
+    body = await request.json()
+    model = body.get("model", "")
+    auth = request.headers.get("authorization", "")
+
+    if not auth.startswith("Bearer ol-"):
+        return JSONResponse(status_code=401, content={"error": {"message": "invalid api key"}})
+    if model not in OL_SERVED:
+        return JSONResponse(status_code=404, content={"error": {"message": "model not found"}})
+
+    if not body.get("stream"):
+        return {
+            "choices": [{"message": {"role": "assistant", "content": ANSWER}}],
+            "usage": {"prompt_tokens": 8, "completion_tokens": 240, "total_tokens": 248},
+        }
+    return StreamingResponse(stream_answer(model), media_type="text/event-stream")
+
+
 @app.post("/v1/chat/completions")
 async def completions(request: Request):
     body = await request.json()

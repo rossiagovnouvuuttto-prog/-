@@ -62,30 +62,31 @@ with sync_playwright() as pw:
 
     print("\n== starter cards ==")
     cards = page.locator(".welcome .starters .starter")
-    check("five starter cards", cards.count() == 5, str(cards.count()))
+    check("six starter cards", cards.count() == 6, str(cards.count()))
     names = [cards.nth(i).locator(".s-name").inner_text() for i in range(cards.count())]
     check("DeepSeek card", "DeepSeek" in names, str(names))
     check("Qwen card", "Qwen" in names, str(names))
     check("Llama card", "Llama" in names, str(names))
     check("Mistral card", "Mistral" in names, str(names))
     check("DeepSeek API card", "DeepSeek API" in names, str(names))
+    check("Ollama card", "Ollama" in names, str(names))
 
-    descs = [cards.nth(i).locator(".s-desc").inner_text() for i in range(5)]
+    descs = [cards.nth(i).locator(".s-desc").inner_text() for i in range(6)]
     check("each card has a description", all(d.strip() for d in descs), str(descs))
-    icons = [cards.nth(i).locator(".s-icon").inner_text() for i in range(5)]
+    icons = [cards.nth(i).locator(".s-icon").inner_text() for i in range(6)]
     check("each card has an icon", all(i.strip() for i in icons), str(icons))
 
-    statuses = [cards.nth(i).locator(".s-status").inner_text().strip() for i in range(5)]
+    statuses = [cards.nth(i).locator(".s-status").inner_text().strip() for i in range(6)]
     check("status pill on every card",
           all(t in ("Online", "Offline") for t in statuses), str(statuses))
     # Both provider keys are configured for this suite, so only Llama - whose
     # family the stand-in router serves nothing of - reads Offline.
     check("online and offline both rendered",
-          statuses.count("Online") == 4 and statuses.count("Offline") == 1, str(statuses))
+          statuses.count("Online") == 5 and statuses.count("Offline") == 1, str(statuses))
     check("the DeepSeek API card is live on its own key",
           statuses[4] == "Online", str(statuses))
     check("cards are type-coloured",
-          len({cards.nth(i).get_attribute("data-type") for i in range(5)}) == 5)
+          len({cards.nth(i).get_attribute("data-type") for i in range(6)}) == 6)
     check("bright card text is dark for contrast",
           cards.nth(0).evaluate("n => getComputedStyle(n).color") in
           ("rgb(10, 26, 51)",), cards.nth(0).evaluate("n => getComputedStyle(n).color"))
@@ -107,7 +108,7 @@ with sync_playwright() as pw:
     check("model cards listed", page.locator(".model-card").count() >= 20,
           str(page.locator(".model-card").count()))
     check("picker shows the starter row",
-          page.locator("#pickerStarters .starter").count() == 5,
+          page.locator("#pickerStarters .starter").count() == 6,
           str(page.locator("#pickerStarters .starter").count()))
     page.screenshot(path=str(SHOTS / "02-model-picker.png"))
 
@@ -115,7 +116,8 @@ with sync_playwright() as pw:
     check("category filters", page.locator(".model-card").count() == 4,
           str(page.locator(".model-card").count()))
     page.fill("#modelSearch", "coder")
-    check("search filters", page.locator(".model-card").count() == 1,
+    # Qwen2.5-Coder on Hugging Face and Qwen3 Coder on Ollama
+    check("search filters", page.locator(".model-card").count() == 2,
           str(page.locator(".model-card").count()))
     page.fill("#modelSearch", "")
     page.click("#pickerCats button:has-text('Все модели')")

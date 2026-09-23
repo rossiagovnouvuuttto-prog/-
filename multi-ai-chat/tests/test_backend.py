@@ -128,14 +128,15 @@ with urllib.request.urlopen(APP + "/api/health", timeout=20) as resp:
 with urllib.request.urlopen(APP + "/api/featured", timeout=60) as resp:
     cards = json.load(resp)["featured"]
 
-check("returns five cards", len(cards) == 5, str(len(cards)))
+check("returns six cards", len(cards) == 6, str(len(cards)))
 check("families are the requested ones",
-      [c["name"] for c in cards] == ["DeepSeek", "Qwen", "Llama", "Mistral", "DeepSeek API"],
+      [c["name"] for c in cards] == ["DeepSeek", "Qwen", "Llama", "Mistral",
+                                     "DeepSeek API", "Ollama"],
       str([c["name"] for c in cards]))
 check("every card has an icon", all(c["icon"] for c in cards))
 check("every card has a description", all(c["desc"] for c in cards))
 check("every card has a Model ID",
-      all("/" in c["id"] or c["id"].startswith("deepseek:") for c in cards),
+      all("/" in c["id"] or c["id"].startswith(("deepseek:", "ollama:")) for c in cards),
       str([c["id"] for c in cards]))
 check("status is online or offline",
       all(c["status"] in ("online", "offline") for c in cards),
@@ -173,12 +174,34 @@ check("DeepSeek API answers", len(text) > 50 and not any(e.get("type") == "error
 ev = post_stream(base("deepseek:no-such-model"))
 err = next((e for e in ev if e.get("type") == "error"), None)
 check("unknown DeepSeek model is named as such",
-      bool(err) and "DeepSeek API" in err.get("message", ""),
+      bool(err) and "DeepSeek" in err.get("message", "") and "Hugging Face" not in err.get("message", ""),
       json.dumps(err, ensure_ascii=False) if err else "none")
 
 ev = post_stream(base("deepseek:bad id"))
 err = next((e for e in ev if e.get("type") == "error"), None)
 check("malformed deepseek id rejected", bool(err) and err.get("code") == "bad_model_id",
+      json.dumps(err, ensure_ascii=False) if err else "none")
+
+print("\n== the Ollama provider ==")
+ol = by_name["Ollama"]
+check("card is routed to ollama", ol["provider"] == "ollama", json.dumps(ol, ensure_ascii=False))
+check("card is online with a key set", ol["status"] == "online", ol["status"])
+check("health reports the ollama key", health_pre.get("ollama_configured") is True,
+      json.dumps(health_pre))
+check("resolver skipped the tags the account lacks",
+      ol["id"] != ol["candidates"][0], f'{ol["candidates"][0]} -> {ol["id"]}')
+check("the colon in the tag survived routing",
+      ol["id"].startswith("ollama:") and ":" in ol["id"][len("ollama:"):], ol["id"])
+
+ev = post_stream(base(ol["id"]))
+text = "".join(e.get("content", "") for e in ev if e.get("type") == "delta")
+check("Ollama answers", len(text) > 50 and not any(e.get("type") == "error" for e in ev),
+      str([e.get("type") for e in ev][:4]))
+
+ev = post_stream(base("ollama:no-such:tag"))
+err = next((e for e in ev if e.get("type") == "error"), None)
+check("unknown Ollama model is named as such",
+      bool(err) and "Ollama" in err.get("message", "") and "Hugging Face" not in err.get("message", ""),
       json.dumps(err, ensure_ascii=False) if err else "none")
 
 print("\n== chatting with each resolved model ==")
