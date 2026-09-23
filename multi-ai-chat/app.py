@@ -355,7 +355,7 @@ async def stream_chat(req: ChatRequest) -> AsyncIterator[str]:
             {
                 "type": "error",
                 "code": "network",
-                "message": "Ошибка сети при обращении к Hugging Face.",
+                "message": f"Не удалось связаться с {dest.label}.",
             }
         )
     except asyncio.CancelledError:
@@ -385,7 +385,7 @@ async def complete_once(req: ChatRequest) -> dict[str, Any]:
     except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout):
         raise ChatError("timeout", "Время ожидания ответа истекло.", 504)
     except httpx.HTTPError:
-        raise ChatError("network", "Ошибка сети при обращении к Hugging Face.", 502)
+        raise ChatError("network", f"Не удалось связаться с {dest.label}.", 502)
 
     if resp.status_code >= 400:
         raise classify_http_error(resp.status_code, resp.text, dest.provider)

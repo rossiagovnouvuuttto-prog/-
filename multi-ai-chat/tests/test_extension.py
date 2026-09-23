@@ -58,6 +58,20 @@ with sync_playwright() as pw:
     ctx.on("response", lambda r: bad_responses.append(f"{r.status} {r.url}") if r.status >= 400 else None)
     ctx.on("requestfailed", lambda r: bad_responses.append(f"FAILED {r.url}"))
 
+    print("\n== the manifest reaches every provider ==")
+    # A stand-in that answers CORS hides this: the real APIs do not, so a
+    # provider missing from host_permissions fails only in a real browser.
+    import json as _json
+    import re as _re
+    manifest = _json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
+    allowed = manifest.get("host_permissions", [])
+    api_src = (EXT / "static" / "api.js").read_text(encoding="utf-8")
+    bases = _re.findall(r"_DEFAULT_BASE = 'https://([^/']+)", api_src)
+    check("found every provider default", len(bases) >= 3, str(bases))
+    for host in bases:
+        check(f"manifest allows {host}",
+              any(rule.startswith(f"https://{host}/") for rule in allowed), str(allowed))
+
     print("\n== extension loads ==")
     worker = None
     for w in ctx.service_workers:

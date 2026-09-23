@@ -289,7 +289,8 @@
           if (err && err.name === 'AbortError') return;
           await send({
             type: 'error', code: 'network',
-            message: 'Ошибка сети при обращении к Hugging Face. Проверьте интернет.',
+            message: `Не удалось связаться с ${dest.label}. Проверьте интернет `
+                   + 'и что расширению разрешён доступ к этому сайту.',
           });
           return;
         }
@@ -374,7 +375,7 @@
         signal,
       });
     } catch {
-      return json({ error: { code: 'network', message: 'Ошибка сети при обращении к Hugging Face.' } }, 502);
+      return json({ error: { code: 'network', message: `Не удалось связаться с ${dest.label}.` } }, 502);
     }
     if (resp.status >= 400) {
       return json({ error: classifyHttpError(resp.status, await resp.text(), dest.provider) }, resp.status);

@@ -267,7 +267,7 @@ function streamChat(req, conf, clientSignal) {
         const timedOut = err && (err.name === 'AbortError' || err.name === 'TimeoutError');
         await send(timedOut
           ? { type: 'error', code: 'timeout', message: 'Время ожидания ответа истекло. Попробуйте ещё раз.' }
-          : { type: 'error', code: 'network', message: 'Ошибка сети при обращении к Hugging Face.' });
+          : { type: 'error', code: 'network', message: `Не удалось связаться с ${dest.label}.` });
         return;
       }
 
@@ -366,7 +366,7 @@ async function completeOnce(req, conf) {
     return json({
       error: timedOut
         ? { code: 'timeout', message: 'Время ожидания ответа истекло.' }
-        : { code: 'network', message: 'Ошибка сети при обращении к Hugging Face.' },
+        : { code: 'network', message: `Не удалось связаться с ${dest.label}.` },
     }, timedOut ? 504 : 502);
   }
   guard.done();
