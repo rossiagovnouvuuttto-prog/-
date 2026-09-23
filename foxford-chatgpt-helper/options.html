@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Настройки · Foxford → ChatGPT</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="fxg-page fxg-page--options">
+  <header class="fxg-head">
+    <span class="fxg-logo" aria-hidden="true">💬</span>
+    <h1>Настройки «Foxford → ChatGPT»</h1>
+  </header>
+
+  <section class="fxg-card">
+    <h2>Как это работает</h2>
+    <ol class="fxg-list">
+      <li>На странице задания foxford.ru нажмите «Разобрать с ChatGPT».</li>
+      <li>Расширение соберёт условие и варианты ответа в промпт и скопирует его в буфер обмена.</li>
+      <li>Откроется новая вкладка chatgpt.com — вставьте промпт (Ctrl+V / ⌘V) и отправьте.</li>
+    </ol>
+    <p class="fxg-hint">
+      API-ключи не нужны и не используются. Расширение не читает cookies и токены ChatGPT,
+      не заходит в ваш аккаунт и ничего не отправляет само — вы вставляете текст вручную.
+      Кнопку сдачи задания на Foxford расширение никогда не нажимает.
+    </p>
+  </section>
+
+  <section class="fxg-card">
+    <h2>Промпт</h2>
+    <div class="fxg-row">
+      <label for="detail">Подробность разбора</label>
+      <select id="detail">
+        <option value="short">Кратко — ход решения и ответ</option>
+        <option value="normal">Обычно — пошаговое объяснение (рекомендуется)</option>
+        <option value="detailed">Подробно — плюс типичные ошибки и задание для самопроверки</option>
+      </select>
+    </div>
+    <div class="fxg-row">
+      <label for="extraInstruction">Своя инструкция в конце промпта (необязательно)</label>
+      <textarea id="extraInstruction" rows="3" maxlength="500" placeholder="Например: объясняй как для 7 класса, без сложных терминов"></textarea>
+    </div>
+    <details class="fxg-preview">
+      <summary>Пример промпта</summary>
+      <pre id="preview"></pre>
+    </details>
+  </section>
+
+  <section class="fxg-card">
+    <h2>Интерфейс</h2>
+    <div class="fxg-row">
+      <label for="theme">Тема оформления</label>
+      <select id="theme">
+        <option value="auto">Как в системе</option>
+        <option value="light">Светлая</option>
+        <option value="dark">Тёмная</option>
+      </select>
+    </div>
+    <label class="fxg-check">
+      <input id="systemNotification" type="checkbox">
+      Показывать системное уведомление «Задание скопировано — вставьте его в ChatGPT»
+    </label>
+  </section>
+
+  <p id="status" class="fxg-status" role="status"></p>
+
+  <script src="options.js"></script>
+</body>
+</html>

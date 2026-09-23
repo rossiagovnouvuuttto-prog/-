@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Foxford → ChatGPT</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="fxg-page fxg-page--popup">
+  <header class="fxg-head">
+    <span class="fxg-logo" aria-hidden="true">💬</span>
+    <h1>Foxford → ChatGPT</h1>
+  </header>
+
+  <p id="status" class="fxg-status">Проверяю вкладку…</p>
+
+  <button id="send" class="fxg-primary" type="button">Разобрать с ChatGPT</button>
+  <button id="copy" class="fxg-secondary" type="button">Скопировать задание</button>
+
+  <div class="fxg-row fxg-row--top">
+    <label for="theme">Тема оформления</label>
+    <select id="theme">
+      <option value="auto">Как в системе</option>
+      <option value="light">Светлая</option>
+      <option value="dark">Тёмная</option>
+    </select>
+  </div>
+
+  <button id="options" class="fxg-link" type="button">Все настройки</button>
+
+  <p class="fxg-hint">Без API-ключей: задание копируется в буфер обмена, а ChatGPT открывается в новой вкладке. Кнопку сдачи задания расширение не нажимает.</p>
+  <script src="popup.js"></script>
+</body>
+</html>

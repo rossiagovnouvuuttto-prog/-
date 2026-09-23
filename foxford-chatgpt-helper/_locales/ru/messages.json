@@ -1,0 +1,4 @@
+{
+  "extName": { "message": "Разбор заданий Foxford → ChatGPT" },
+  "extDescription": { "message": "Копирует задание с foxford.ru в виде промпта и открывает ChatGPT." }
+}

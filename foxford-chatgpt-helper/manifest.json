@@ -1,15 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Claude AI для Foxford",
-  "version": "1.0.0",
+  "name": "Разбор заданий Foxford → ChatGPT",
+  "version": "2.0.0",
   "default_locale": "ru",
-  "description": "Помощник на базе Claude: анализирует задание на foxford.ru и подсказывает ответ с объяснением.",
+  "description": "Собирает текст задания на foxford.ru в аккуратный промпт, копирует его и открывает ChatGPT. Без API-ключей.",
   "minimum_chrome_version": "116",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "notifications"],
   "host_permissions": [
     "https://foxford.ru/*",
-    "https://*.foxford.ru/*",
-    "https://api.anthropic.com/*"
+    "https://*.foxford.ru/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -27,7 +26,7 @@
   "options_page": "options.html",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Claude AI для Foxford",
+    "default_title": "Разбор заданий Foxford → ChatGPT",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
