@@ -7,7 +7,8 @@
  */
 
 import { ai, resetProvider } from './ai/provider.js';
-import { clearConnection, readConnection, saveConnection } from './ai/connection.js';
+import { clearConnection, isConnected, readConnection, resolve, saveConnection } from './ai/connection.js';
+import { SERVICES } from './ai/services.js';
 import { directProvider, explain } from './ai/direct-provider.js';
 import { auth, currentPlan } from './auth.js';
 import { LIMITS, PLANS } from './config.js';
@@ -323,27 +324,35 @@ function showPaywall(limits) {
  */
 function openConnectModal() {
   const current = readConnection();
+  const initial = current.service === 'off' ? 'glm' : current.service;
 
   openModal({
     title: 'Подключить свой AI',
-    subtitle: 'Промпты будет писать модель Ollama вместо встроенного движка.',
+    subtitle: 'Промпты будет писать выбранная модель вместо встроенного движка.',
     body: `
       <div class="field">
-        <label class="field__label" for="connMode">Откуда брать модель</label>
-        <select class="field__input" id="connMode">
-          <option value="cloud">Облако Ollama — по ключу</option>
-          <option value="local">Ollama на этом компьютере</option>
+        <label class="field__label" for="connService">Сервис</label>
+        <select class="field__input" id="connService">
+          ${Object.entries(SERVICES).map(([id, service]) =>
+            `<option value="${id}">${service.label}</option>`).join('')}
         </select>
       </div>
 
       <div class="field" id="keyField">
-        <label class="field__label" for="connKey">Ключ с ollama.com/settings/keys</label>
+        <label class="field__label" for="connKey">Ключ</label>
         <input class="field__input" id="connKey" type="password" autocomplete="off" spellcheck="false" placeholder="вставьте ключ сюда">
+        <p class="field__hint" id="keyHint"></p>
+      </div>
+
+      <div class="field" id="hostField" hidden>
+        <label class="field__label" for="connHost">Адрес сервиса</label>
+        <input class="field__input" id="connHost" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1">
       </div>
 
       <div class="field">
         <label class="field__label" for="connModel">Модель</label>
-        <input class="field__input" id="connModel" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-oss:120b-cloud">
+        <input class="field__input" id="connModel" type="text" autocomplete="off" spellcheck="false">
+        <p class="field__hint" id="modelHint"></p>
       </div>
 
       <p class="field__error" id="connError"></p>
@@ -352,31 +361,40 @@ function openConnectModal() {
       <button class="btn btn--primary btn--block" type="button" id="connTest">
         <span class="btn__label">Проверить и подключить</span><span class="btn__spinner"></span>
       </button>
-      ${current.mode !== 'off' ? '<button class="btn btn--block btn--danger" type="button" id="connOff">Отключить</button>' : ''}
+      ${isConnected(current) ? '<button class="btn btn--block btn--danger" type="button" id="connOff">Отключить</button>' : ''}
 
       <p class="modal__sub">
-        Ключ сохраняется только в этом браузере и отправляется только в Ollama.
-        Мы его не видим, в код сайта он не попадает.
+        Ключ сохраняется только в этом браузере и отправляется только выбранному
+        сервису. Мы его не видим, в код сайта он не попадает.
       </p>`,
     onMount(modal) {
-      const mode = modal.querySelector('#connMode');
+      const service = modal.querySelector('#connService');
       const key = modal.querySelector('#connKey');
+      const host = modal.querySelector('#connHost');
       const model = modal.querySelector('#connModel');
-      const keyField = modal.querySelector('#keyField');
       const error = modal.querySelector('#connError');
       const result = modal.querySelector('#connResult');
       const test = modal.querySelector('#connTest');
 
-      mode.value = current.mode === 'local' ? 'local' : 'cloud';
+      service.value = initial;
       key.value = current.apiKey;
+      host.value = current.host;
       model.value = current.model;
 
+      /** Поля подстраиваются под выбранный сервис. */
       const sync = () => {
-        keyField.hidden = mode.value === 'local';
-        model.placeholder = mode.value === 'local' ? 'llama3.2' : 'gpt-oss:120b-cloud';
+        const preset = SERVICES[service.value];
+
+        modal.querySelector('#keyField').hidden = !preset.needsKey;
+        modal.querySelector('#hostField').hidden = Boolean(preset.host);
+        modal.querySelector('#keyHint').textContent = preset.keyHint;
+        modal.querySelector('#modelHint').textContent = preset.modelHint;
+        model.placeholder = preset.model || 'название модели';
+
+        if (service.value !== current.service) model.value = '';
       };
       sync();
-      mode.addEventListener('change', sync);
+      service.addEventListener('change', sync);
 
       test.addEventListener('click', async () => {
         error.textContent = '';
@@ -384,25 +402,26 @@ function openConnectModal() {
         setLoading(test, true);
 
         // Настройки нужно сохранить до проверки: клиент читает их сам.
-        const connection = saveConnection({
-          mode: mode.value,
-          apiKey: mode.value === 'local' ? '' : key.value.trim(),
+        saveConnection({
+          service: service.value,
+          apiKey: SERVICES[service.value].needsKey ? key.value.trim() : '',
+          host: host.value.trim(),
           model: model.value.trim(),
         });
         resetProvider();
 
         try {
           await directProvider.ping();
-          renderQuota();
           showEngine();
           result.innerHTML = '<p class="conn-ok">Модель отвечает. AI подключён.</p>';
           toast('AI подключён — промпты пишет модель', 'success', 3200);
           setTimeout(closeModal, 1200);
         } catch (failure) {
+          const attempted = resolve();
           clearConnection();
           resetProvider();
           showEngine();
-          error.textContent = explain(failure, connection);
+          error.textContent = explain(failure, attempted);
         } finally {
           setLoading(test, false);
         }
@@ -830,7 +849,7 @@ async function showEngine() {
       return;
     }
 
-    const name = info.model || (info.mode === 'local' ? 'Ollama на этом компьютере' : 'Ollama');
+    const name = info.label ? `${info.label} · ${info.model}` : info.model;
     hint.innerHTML = `<span class="engine"><span class="engine__dot"></span>AI подключён: ${escapeHtml(name)}</span>
       <button class="link-btn" type="button" data-action="connect">изменить</button>`;
   } catch {

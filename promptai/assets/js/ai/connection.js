@@ -1,21 +1,19 @@
 /**
- * Настройки подключения к Ollama, которые пользователь вводит сам.
+ * Настройки подключения, которые пользователь вводит сам.
  *
  * Ключ хранится только в localStorage этого браузера: он не попадает ни в
  * код сайта, ни в репозиторий, ни на чужие устройства. Отправляется он
- * единственному адресату — самой Ollama.
+ * единственному адресату — выбранному сервису.
  */
 
 import { APP } from '../config.js';
+import { DEFAULT_SERVICE, getService } from './services.js';
 
 const KEY = `${APP.storagePrefix}connection`;
 
-export const CLOUD_HOST = 'https://ollama.com';
-export const LOCAL_HOST = 'http://localhost:11434';
-
 export const DEFAULTS = {
-  /** 'off' — встроенный движок, 'cloud' — облако по ключу, 'local' — Ollama на этом компьютере. */
-  mode: 'off',
+  /** 'off' — встроенный движок; иначе идентификатор сервиса. */
+  service: 'off',
   apiKey: '',
   model: '',
   host: '',
@@ -23,7 +21,8 @@ export const DEFAULTS = {
 
 export function readConnection() {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') };
+    const stored = JSON.parse(localStorage.getItem(KEY) || '{}');
+    return { ...DEFAULTS, ...stored };
   } catch {
     return { ...DEFAULTS };
   }
@@ -46,14 +45,18 @@ export function clearConnection() {
   return { ...DEFAULTS };
 }
 
-/** Адрес Ollama для текущего режима. */
-export function hostFor(connection) {
-  if (connection.host) return connection.host.replace(/\/+$/, '');
-  return connection.mode === 'local' ? LOCAL_HOST : CLOUD_HOST;
-}
+export const isConnected = (connection = readConnection()) => connection.service !== 'off';
 
-/** Модель по умолчанию для текущего режима. */
-export function modelFor(connection) {
-  if (connection.model) return connection.model;
-  return connection.mode === 'local' ? 'llama3.2' : 'gpt-oss:120b-cloud';
+/** Итоговые параметры запроса: что выбрал пользователь, дополненное умолчаниями сервиса. */
+export function resolve(connection = readConnection()) {
+  const service = getService(connection.service === 'off' ? DEFAULT_SERVICE : connection.service);
+
+  return {
+    id: connection.service,
+    api: service.api,
+    label: service.label,
+    host: (connection.host || service.host).replace(/\/+$/, ''),
+    model: connection.model || service.model,
+    apiKey: connection.apiKey,
+  };
 }

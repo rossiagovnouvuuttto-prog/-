@@ -9,7 +9,7 @@
  */
 
 import { AI } from '../config.js';
-import { readConnection } from './connection.js';
+import { isConnected, resolve } from './connection.js';
 import { apiProvider } from './api-provider.js';
 import { directProvider } from './direct-provider.js';
 import { localProvider } from './local-provider.js';
@@ -52,12 +52,11 @@ async function detect() {
   if (detected) return detected;
 
   detection ||= (async () => {
-    const connection = readConnection();
-
-    if (connection.mode !== 'off') {
+    if (isConnected()) {
+      const connection = resolve();
       detected = {
         provider: directProvider,
-        info: { model: connection.model, mode: connection.mode, source: 'direct' },
+        info: { model: connection.model, label: connection.label, source: 'direct' },
       };
       return detected;
     }

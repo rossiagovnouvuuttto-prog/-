@@ -103,6 +103,10 @@ a  { color: inherit; text-decoration: none; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; -webkit-tap-highlight-color: transparent; }
 img, svg { display: block; max-width: 100%; }
+
+/* Атрибут hidden должен побеждать любой display, заданный элементу:
+   иначе .field { display: grid } оставляет скрытое поле на экране. */
+[hidden] { display: none !important; }
 ::selection { background: rgba(124, 92, 255, .4); color: #fff; }
 
 :focus-visible {
@@ -1304,6 +1308,7 @@ select.field__input option { background: #14142a; color: var(--text); }
 }
 .field__input:focus { border-color: rgba(124, 92, 255, .6); box-shadow: 0 0 0 3px rgba(124, 92, 255, .14); }
 .field__error { font-size: .76rem; color: var(--danger); min-height: 1em; }
+.field__hint { font-size: .73rem; color: var(--text-muted); }
 
 .modal__switch {
   margin-top: 4px;
@@ -1811,26 +1816,81 @@ const LIMITS = {
 };
 
 
+/* ────────── assets/js/ai/services.js ────────── */
+
+/**
+ * Сервисы, к которым умеет подключаться сайт.
+ *
+ * `api` определяет формат запроса:
+ *   'ollama' — POST {host}/api/chat, ответ в message.content
+ *   'openai' — POST {host}/chat/completions, ответ в choices[0].message.content
+ *
+ * OpenAI-совместимый формат понимают очень многие сервисы, поэтому кроме
+ * перечисленных подойдёт любой — достаточно указать его адрес вручную.
+ */
+
+const SERVICES = {
+  glm: {
+    label: 'GLM / Zhipu',
+    api: 'openai',
+    host: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4.7-flash',
+    needsKey: true,
+    keyHint: 'Ключ из личного кабинета bigmodel.cn',
+    modelHint: 'glm-4.7-flash — бесплатная',
+  },
+  'ollama-cloud': {
+    label: 'Ollama — облако',
+    api: 'ollama',
+    host: 'https://ollama.com',
+    model: 'gpt-oss:120b-cloud',
+    needsKey: true,
+    keyHint: 'Ключ с ollama.com/settings/keys',
+    modelHint: 'список моделей: ollama.com/search?c=cloud',
+  },
+  'ollama-local': {
+    label: 'Ollama на этом компьютере',
+    api: 'ollama',
+    host: 'http://localhost:11434',
+    model: 'llama3.2',
+    needsKey: false,
+    keyHint: '',
+    modelHint: 'модель, скачанная командой ollama pull',
+  },
+  openai: {
+    label: 'Другой OpenAI-совместимый',
+    api: 'openai',
+    host: '',
+    model: '',
+    needsKey: true,
+    keyHint: 'Ключ вашего сервиса',
+    modelHint: 'название модели у вашего сервиса',
+  },
+};
+
+const DEFAULT_SERVICE = 'glm';
+
+const getService = (id) => SERVICES[id] || SERVICES[DEFAULT_SERVICE];
+
+
 /* ────────── assets/js/ai/connection.js ────────── */
 
 /**
- * Настройки подключения к Ollama, которые пользователь вводит сам.
+ * Настройки подключения, которые пользователь вводит сам.
  *
  * Ключ хранится только в localStorage этого браузера: он не попадает ни в
  * код сайта, ни в репозиторий, ни на чужие устройства. Отправляется он
- * единственному адресату — самой Ollama.
+ * единственному адресату — выбранному сервису.
  */
+
 
 
 
 const KEY = `${APP.storagePrefix}connection`;
 
-const CLOUD_HOST = 'https://ollama.com';
-const LOCAL_HOST = 'http://localhost:11434';
-
 const DEFAULTS = {
-  /** 'off' — встроенный движок, 'cloud' — облако по ключу, 'local' — Ollama на этом компьютере. */
-  mode: 'off',
+  /** 'off' — встроенный движок; иначе идентификатор сервиса. */
+  service: 'off',
   apiKey: '',
   model: '',
   host: '',
@@ -1838,7 +1898,8 @@ const DEFAULTS = {
 
 function readConnection() {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') };
+    const stored = JSON.parse(localStorage.getItem(KEY) || '{}');
+    return { ...DEFAULTS, ...stored };
   } catch {
     return { ...DEFAULTS };
   }
@@ -1861,16 +1922,20 @@ function clearConnection() {
   return { ...DEFAULTS };
 }
 
-/** Адрес Ollama для текущего режима. */
-function hostFor(connection) {
-  if (connection.host) return connection.host.replace(/\/+$/, '');
-  return connection.mode === 'local' ? LOCAL_HOST : CLOUD_HOST;
-}
+const isConnected = (connection = readConnection()) => connection.service !== 'off';
 
-/** Модель по умолчанию для текущего режима. */
-function modelFor(connection) {
-  if (connection.model) return connection.model;
-  return connection.mode === 'local' ? 'llama3.2' : 'gpt-oss:120b-cloud';
+/** Итоговые параметры запроса: что выбрал пользователь, дополненное умолчаниями сервиса. */
+function resolve(connection = readConnection()) {
+  const service = getService(connection.service === 'off' ? DEFAULT_SERVICE : connection.service);
+
+  return {
+    id: connection.service,
+    api: service.api,
+    label: service.label,
+    host: (connection.host || service.host).replace(/\/+$/, ''),
+    model: connection.model || service.model,
+    apiKey: connection.apiKey,
+  };
 }
 
 
@@ -2168,16 +2233,97 @@ ${text}`,
 }
 
 
+/* ────────── assets/js/ai/openai-chat.js ────────── */
+
+/**
+ * Запрос к сервису с OpenAI-совместимым API (GLM, DeepSeek, OpenAI и другие).
+ *
+ * Схема ответа передаётся модели текстом: в этом формате нет отдельного
+ * поля для JSON-схемы, зато есть режим response_format: json_object.
+ * Ответ на всякий случай очищается от ```-обёрток — некоторые модели
+ * добавляют их даже в режиме JSON.
+ */
+
+/** Достаёт JSON даже если модель обернула его в текст или ```json. */
+function parseJson(content) {
+  const cleaned = String(content)
+    .replace(/^\s*```(?:json)?/i, '')
+    .replace(/```\s*$/, '')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // Последняя попытка: вырезаем самый внешний объект.
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start === -1 || end <= start) throw new Error('Модель ответила не в формате JSON');
+    return JSON.parse(cleaned.slice(start, end + 1));
+  }
+}
+
+/**
+ * @param {object} options
+ * @param {() => {host: string, model: string, apiKey: string}} options.settings
+ * @param {(url: string, init: object) => Promise<Response>} [options.request] — для тестов
+ * @param {number} [options.timeoutMs]
+ */
+function createOpenAiChat({ settings, request = fetch, timeoutMs = 90000 }) {
+  return async function chat({ system, user, schema }) {
+    const { host, model, apiKey } = settings();
+
+    const instruction = `${system}
+
+Answer with a single JSON object matching exactly this schema, with no extra keys and no markdown:
+${JSON.stringify(schema)}`;
+
+    const response = await request(`${host.replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.8,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: instruction },
+          { role: 'user', content: user },
+        ],
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    const raw = await response.text();
+
+    if (!response.ok) {
+      let detail = raw.slice(0, 300);
+      try {
+        const parsed = JSON.parse(raw);
+        detail = parsed.error?.message || parsed.error || parsed.message || detail;
+      } catch { /* не JSON */ }
+      throw new Error(`${response.status}: ${detail}`);
+    }
+
+    const content = JSON.parse(raw)?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Сервис вернул пустой ответ');
+
+    return parseJson(content);
+  };
+}
+
+
 /* ────────── assets/js/ai/direct-provider.js ────────── */
 
 /**
- * Прямое обращение к Ollama из браузера.
+ * Прямое обращение к AI-сервису из браузера.
  *
- * Работает без сервера: страница сама отправляет запрос в Ollama с ключом,
- * который пользователь ввёл в настройках. Ключ остаётся в его браузере.
+ * Работает без сервера: страница сама отправляет запрос с ключом, который
+ * пользователь ввёл в настройках. Ключ остаётся в его браузере.
  *
  * Ограничение, которое здесь не обойти: браузер выполнит запрос, только если
- * Ollama разрешает обращения с адреса этой страницы (CORS). Если не разрешает,
+ * сервис разрешает обращения со страниц сайтов (CORS). Если не разрешает,
  * запрос не уйдёт, и мы сообщаем об этом понятным текстом — гадать
  * пользователю не придётся.
  */
@@ -2186,33 +2332,36 @@ ${text}`,
 
 
 
+
 /** Человеческое объяснение вместо «Failed to fetch». */
-function explain(error, connection) {
+function explain(error, connection = resolve()) {
   const message = String(error?.message || error);
+  const local = /localhost|127\.0\.0\.1/.test(connection.host || '');
 
   if (/Failed to fetch|NetworkError|load failed/i.test(message)) {
-    return connection.mode === 'local'
-      ? 'Браузер не смог обратиться к Ollama на этом компьютере. Проверьте, что приложение Ollama запущено, и что ему разрешены обращения с этой страницы (переменная OLLAMA_ORIGINS).'
-      : 'Браузер не смог обратиться к ollama.com напрямую — сервис не разрешает запросы со страниц сайтов. Ключ здесь ни при чём: нужен запуск сервера PromptAI, он обращается к Ollama сам.';
+    return local
+      ? 'Браузер не смог обратиться к сервису на этом компьютере. Проверьте, что приложение запущено и что ему разрешены обращения с этой страницы (для Ollama — переменная OLLAMA_ORIGINS).'
+      : `Браузер не пустил запрос к ${connection.host || 'сервису'}: тот не разрешает обращения со страниц сайтов. Ключ здесь ни при чём — поможет запуск сервера PromptAI, он обращается к сервису сам.`;
   }
-  if (/\b401\b|\b403\b/.test(message)) return 'Ollama не приняла ключ. Проверьте, что он скопирован полностью.';
-  if (/\b404\b/.test(message)) return 'Такой модели нет. Список облачных моделей — на ollama.com/search?c=cloud';
-  if (/aborted|timeout/i.test(message)) return 'Ollama не ответила вовремя. Попробуйте модель полегче.';
+  if (/\b401\b|\b403\b/.test(message)) return 'Сервис не принял ключ. Проверьте, что он скопирован полностью и не отозван.';
+  if (/\b404\b/.test(message)) return 'Не найдено: проверьте название модели и адрес сервиса.';
+  if (/\b429\b/.test(message)) return 'Слишком много запросов или закончился лимит на счёте.';
+  if (/aborted|timeout/i.test(message)) return 'Сервис не ответил вовремя. Попробуйте модель полегче.';
   return message;
 }
 
 /** Запрос к Ollama с ответом строго по JSON-схеме. */
-async function chat({ system, user, schema }) {
-  const connection = readConnection();
+async function ollamaChat({ system, user, schema }) {
+  const connection = resolve();
 
-  const response = await fetch(`${hostFor(connection)}/api/chat`, {
+  const response = await fetch(`${connection.host}/api/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(connection.apiKey ? { Authorization: `Bearer ${connection.apiKey}` } : {}),
     },
     body: JSON.stringify({
-      model: modelFor(connection),
+      model: connection.model,
       stream: false,
       format: schema,
       options: { temperature: 0.8 },
@@ -2231,14 +2380,22 @@ async function chat({ system, user, schema }) {
     try {
       detail = JSON.parse(raw).error || detail;
     } catch { /* не JSON */ }
-    throw new Error(`Ollama ${response.status}: ${detail}`);
+    throw new Error(`${response.status}: ${detail}`);
   }
 
   const content = JSON.parse(raw)?.message?.content;
-  if (!content) throw new Error('Ollama вернула пустой ответ');
+  if (!content) throw new Error('Сервис вернул пустой ответ');
 
   return JSON.parse(content);
 }
+
+const openAiChat = createOpenAiChat({
+  settings: resolve,
+  timeoutMs: AI.timeoutMs,
+});
+
+/** Формат запроса выбирается по сервису. */
+const chat = (request) => (resolve().api === 'openai' ? openAiChat(request) : ollamaChat(request));
 
 const tasks = createTasks(chat);
 
@@ -3876,12 +4033,11 @@ async function detect() {
   if (detected) return detected;
 
   detection ||= (async () => {
-    const connection = readConnection();
-
-    if (connection.mode !== 'off') {
+    if (isConnected()) {
+      const connection = resolve();
       detected = {
         provider: directProvider,
-        info: { model: connection.model, mode: connection.mode, source: 'direct' },
+        info: { model: connection.model, label: connection.label, source: 'direct' },
       };
       return detected;
     }
@@ -4712,6 +4868,7 @@ function toast(message, type = 'info', duration = 2600) {
 
 
 
+
 /* ──────────────────────────  состояние сессии  ────────────────────────── */
 
 const state = {
@@ -5011,27 +5168,35 @@ function showPaywall(limits) {
  */
 function openConnectModal() {
   const current = readConnection();
+  const initial = current.service === 'off' ? 'glm' : current.service;
 
   openModal({
     title: 'Подключить свой AI',
-    subtitle: 'Промпты будет писать модель Ollama вместо встроенного движка.',
+    subtitle: 'Промпты будет писать выбранная модель вместо встроенного движка.',
     body: `
       <div class="field">
-        <label class="field__label" for="connMode">Откуда брать модель</label>
-        <select class="field__input" id="connMode">
-          <option value="cloud">Облако Ollama — по ключу</option>
-          <option value="local">Ollama на этом компьютере</option>
+        <label class="field__label" for="connService">Сервис</label>
+        <select class="field__input" id="connService">
+          ${Object.entries(SERVICES).map(([id, service]) =>
+            `<option value="${id}">${service.label}</option>`).join('')}
         </select>
       </div>
 
       <div class="field" id="keyField">
-        <label class="field__label" for="connKey">Ключ с ollama.com/settings/keys</label>
+        <label class="field__label" for="connKey">Ключ</label>
         <input class="field__input" id="connKey" type="password" autocomplete="off" spellcheck="false" placeholder="вставьте ключ сюда">
+        <p class="field__hint" id="keyHint"></p>
+      </div>
+
+      <div class="field" id="hostField" hidden>
+        <label class="field__label" for="connHost">Адрес сервиса</label>
+        <input class="field__input" id="connHost" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1">
       </div>
 
       <div class="field">
         <label class="field__label" for="connModel">Модель</label>
-        <input class="field__input" id="connModel" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-oss:120b-cloud">
+        <input class="field__input" id="connModel" type="text" autocomplete="off" spellcheck="false">
+        <p class="field__hint" id="modelHint"></p>
       </div>
 
       <p class="field__error" id="connError"></p>
@@ -5040,31 +5205,40 @@ function openConnectModal() {
       <button class="btn btn--primary btn--block" type="button" id="connTest">
         <span class="btn__label">Проверить и подключить</span><span class="btn__spinner"></span>
       </button>
-      ${current.mode !== 'off' ? '<button class="btn btn--block btn--danger" type="button" id="connOff">Отключить</button>' : ''}
+      ${isConnected(current) ? '<button class="btn btn--block btn--danger" type="button" id="connOff">Отключить</button>' : ''}
 
       <p class="modal__sub">
-        Ключ сохраняется только в этом браузере и отправляется только в Ollama.
-        Мы его не видим, в код сайта он не попадает.
+        Ключ сохраняется только в этом браузере и отправляется только выбранному
+        сервису. Мы его не видим, в код сайта он не попадает.
       </p>`,
     onMount(modal) {
-      const mode = modal.querySelector('#connMode');
+      const service = modal.querySelector('#connService');
       const key = modal.querySelector('#connKey');
+      const host = modal.querySelector('#connHost');
       const model = modal.querySelector('#connModel');
-      const keyField = modal.querySelector('#keyField');
       const error = modal.querySelector('#connError');
       const result = modal.querySelector('#connResult');
       const test = modal.querySelector('#connTest');
 
-      mode.value = current.mode === 'local' ? 'local' : 'cloud';
+      service.value = initial;
       key.value = current.apiKey;
+      host.value = current.host;
       model.value = current.model;
 
+      /** Поля подстраиваются под выбранный сервис. */
       const sync = () => {
-        keyField.hidden = mode.value === 'local';
-        model.placeholder = mode.value === 'local' ? 'llama3.2' : 'gpt-oss:120b-cloud';
+        const preset = SERVICES[service.value];
+
+        modal.querySelector('#keyField').hidden = !preset.needsKey;
+        modal.querySelector('#hostField').hidden = Boolean(preset.host);
+        modal.querySelector('#keyHint').textContent = preset.keyHint;
+        modal.querySelector('#modelHint').textContent = preset.modelHint;
+        model.placeholder = preset.model || 'название модели';
+
+        if (service.value !== current.service) model.value = '';
       };
       sync();
-      mode.addEventListener('change', sync);
+      service.addEventListener('change', sync);
 
       test.addEventListener('click', async () => {
         error.textContent = '';
@@ -5072,25 +5246,26 @@ function openConnectModal() {
         setLoading(test, true);
 
         // Настройки нужно сохранить до проверки: клиент читает их сам.
-        const connection = saveConnection({
-          mode: mode.value,
-          apiKey: mode.value === 'local' ? '' : key.value.trim(),
+        saveConnection({
+          service: service.value,
+          apiKey: SERVICES[service.value].needsKey ? key.value.trim() : '',
+          host: host.value.trim(),
           model: model.value.trim(),
         });
         resetProvider();
 
         try {
           await directProvider.ping();
-          renderQuota();
           showEngine();
           result.innerHTML = '<p class="conn-ok">Модель отвечает. AI подключён.</p>';
           toast('AI подключён — промпты пишет модель', 'success', 3200);
           setTimeout(closeModal, 1200);
         } catch (failure) {
+          const attempted = resolve();
           clearConnection();
           resetProvider();
           showEngine();
-          error.textContent = explain(failure, connection);
+          error.textContent = explain(failure, attempted);
         } finally {
           setLoading(test, false);
         }
@@ -5518,7 +5693,7 @@ async function showEngine() {
       return;
     }
 
-    const name = info.model || (info.mode === 'local' ? 'Ollama на этом компьютере' : 'Ollama');
+    const name = info.label ? `${info.label} · ${info.model}` : info.model;
     hint.innerHTML = `<span class="engine"><span class="engine__dot"></span>AI подключён: ${escapeHtml(name)}</span>
       <button class="link-btn" type="button" data-action="connect">изменить</button>`;
   } catch {

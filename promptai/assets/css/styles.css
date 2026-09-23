@@ -86,6 +86,10 @@ a  { color: inherit; text-decoration: none; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; -webkit-tap-highlight-color: transparent; }
 img, svg { display: block; max-width: 100%; }
+
+/* Атрибут hidden должен побеждать любой display, заданный элементу:
+   иначе .field { display: grid } оставляет скрытое поле на экране. */
+[hidden] { display: none !important; }
 ::selection { background: rgba(124, 92, 255, .4); color: #fff; }
 
 :focus-visible {
@@ -1287,6 +1291,7 @@ select.field__input option { background: #14142a; color: var(--text); }
 }
 .field__input:focus { border-color: rgba(124, 92, 255, .6); box-shadow: 0 0 0 3px rgba(124, 92, 255, .14); }
 .field__error { font-size: .76rem; color: var(--danger); min-height: 1em; }
+.field__hint { font-size: .73rem; color: var(--text-muted); }
 
 .modal__switch {
   margin-top: 4px;
