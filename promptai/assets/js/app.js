@@ -6,7 +6,9 @@
  * оркестрация и работа с DOM.
  */
 
-import { ai } from './ai/provider.js';
+import { ai, resetProvider } from './ai/provider.js';
+import { clearConnection, readConnection, saveConnection } from './ai/connection.js';
+import { directProvider, explain } from './ai/direct-provider.js';
 import { auth, currentPlan } from './auth.js';
 import { LIMITS, PLANS } from './config.js';
 import { GROUP_MAP, IDEA_SEEDS, getOption } from './data/options.js';
@@ -312,6 +314,111 @@ function showPaywall(limits) {
   });
 }
 
+/**
+ * Окно подключения собственной модели.
+ *
+ * Ключ сохраняется только в этом браузере и уходит только в Ollama.
+ * Перед сохранением делается пробный запрос: если он не проходит,
+ * пользователь сразу видит причину, а не молчаливый отказ.
+ */
+function openConnectModal() {
+  const current = readConnection();
+
+  openModal({
+    title: 'Подключить свой AI',
+    subtitle: 'Промпты будет писать модель Ollama вместо встроенного движка.',
+    body: `
+      <div class="field">
+        <label class="field__label" for="connMode">Откуда брать модель</label>
+        <select class="field__input" id="connMode">
+          <option value="cloud">Облако Ollama — по ключу</option>
+          <option value="local">Ollama на этом компьютере</option>
+        </select>
+      </div>
+
+      <div class="field" id="keyField">
+        <label class="field__label" for="connKey">Ключ с ollama.com/settings/keys</label>
+        <input class="field__input" id="connKey" type="password" autocomplete="off" spellcheck="false" placeholder="вставьте ключ сюда">
+      </div>
+
+      <div class="field">
+        <label class="field__label" for="connModel">Модель</label>
+        <input class="field__input" id="connModel" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-oss:120b-cloud">
+      </div>
+
+      <p class="field__error" id="connError"></p>
+      <div id="connResult"></div>
+
+      <button class="btn btn--primary btn--block" type="button" id="connTest">
+        <span class="btn__label">Проверить и подключить</span><span class="btn__spinner"></span>
+      </button>
+      ${current.mode !== 'off' ? '<button class="btn btn--block btn--danger" type="button" id="connOff">Отключить</button>' : ''}
+
+      <p class="modal__sub">
+        Ключ сохраняется только в этом браузере и отправляется только в Ollama.
+        Мы его не видим, в код сайта он не попадает.
+      </p>`,
+    onMount(modal) {
+      const mode = modal.querySelector('#connMode');
+      const key = modal.querySelector('#connKey');
+      const model = modal.querySelector('#connModel');
+      const keyField = modal.querySelector('#keyField');
+      const error = modal.querySelector('#connError');
+      const result = modal.querySelector('#connResult');
+      const test = modal.querySelector('#connTest');
+
+      mode.value = current.mode === 'local' ? 'local' : 'cloud';
+      key.value = current.apiKey;
+      model.value = current.model;
+
+      const sync = () => {
+        keyField.hidden = mode.value === 'local';
+        model.placeholder = mode.value === 'local' ? 'llama3.2' : 'gpt-oss:120b-cloud';
+      };
+      sync();
+      mode.addEventListener('change', sync);
+
+      test.addEventListener('click', async () => {
+        error.textContent = '';
+        result.innerHTML = '';
+        setLoading(test, true);
+
+        // Настройки нужно сохранить до проверки: клиент читает их сам.
+        const connection = saveConnection({
+          mode: mode.value,
+          apiKey: mode.value === 'local' ? '' : key.value.trim(),
+          model: model.value.trim(),
+        });
+        resetProvider();
+
+        try {
+          await directProvider.ping();
+          renderQuota();
+          showEngine();
+          result.innerHTML = '<p class="conn-ok">Модель отвечает. AI подключён.</p>';
+          toast('AI подключён — промпты пишет модель', 'success', 3200);
+          setTimeout(closeModal, 1200);
+        } catch (failure) {
+          clearConnection();
+          resetProvider();
+          showEngine();
+          error.textContent = explain(failure, connection);
+        } finally {
+          setLoading(test, false);
+        }
+      });
+
+      modal.querySelector('#connOff')?.addEventListener('click', () => {
+        clearConnection();
+        resetProvider();
+        closeModal();
+        showEngine();
+        toast('Вернулись на встроенный движок', 'info');
+      });
+    },
+  });
+}
+
 function openAccountModal() {
   const user = auth.current();
   if (!user) {
@@ -512,6 +619,10 @@ function bindComposer() {
 
   input.setAttribute('maxlength', String(LIMITS.ideaMaxLength));
 
+  $('#engineHint').addEventListener('click', (event) => {
+    if (event.target.closest('[data-action="connect"]')) openConnectModal();
+  });
+
   $('#diceBtn').addEventListener('click', () => {
     const idea = pick(IDEA_SEEDS.filter((seed) => seed !== input.value));
     input.value = idea;
@@ -707,14 +818,21 @@ function bindChrome() {
  * штатный режим, а не поломка, пугать пользователя нечем.
  */
 async function showEngine() {
+  const hint = $('#engineHint');
+  if (!hint) return;
+
   try {
     const { info } = await ai.status();
-    if (!info?.model) return;
 
-    const hint = $('#engineHint');
-    if (!hint) return;
+    if (!info) {
+      hint.innerHTML = `Промпты собирает встроенный движок.
+        <button class="link-btn" type="button" data-action="connect">Подключить свой AI</button>`;
+      return;
+    }
 
-    hint.innerHTML = `<span class="engine"><span class="engine__dot"></span>AI подключён: ${escapeHtml(info.model)}</span>`;
+    const name = info.model || (info.mode === 'local' ? 'Ollama на этом компьютере' : 'Ollama');
+    hint.innerHTML = `<span class="engine"><span class="engine__dot"></span>AI подключён: ${escapeHtml(name)}</span>
+      <button class="link-btn" type="button" data-action="connect">изменить</button>`;
   } catch {
     /* молча остаёмся на встроенном движке */
   }

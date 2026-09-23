@@ -491,11 +491,39 @@ img, svg { display: block; max-width: 100%; }
 .composer__counter { font-size: .74rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .composer__submit { width: 100%; }
 .composer__hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin-top: 10px;
   text-align: center;
   font-size: .78rem;
   color: var(--text-muted);
 }
+
+/* Успешная проверка подключения */
+.conn-ok {
+  padding: 11px 13px;
+  border-radius: var(--r-md);
+  border: 1px solid rgba(110, 231, 183, .3);
+  background: rgba(110, 231, 183, .09);
+  color: var(--lime);
+  font-size: .85rem;
+  font-weight: 600;
+}
+
+/* Выпадающий список в модальном окне */
+select.field__input {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 38px;
+}
+select.field__input option { background: #14142a; color: var(--text); }
 
 /* Индикатор подключённой модели */
 .engine {

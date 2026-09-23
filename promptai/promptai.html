@@ -508,11 +508,39 @@ img, svg { display: block; max-width: 100%; }
 .composer__counter { font-size: .74rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .composer__submit { width: 100%; }
 .composer__hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin-top: 10px;
   text-align: center;
   font-size: .78rem;
   color: var(--text-muted);
 }
+
+/* Успешная проверка подключения */
+.conn-ok {
+  padding: 11px 13px;
+  border-radius: var(--r-md);
+  border: 1px solid rgba(110, 231, 183, .3);
+  background: rgba(110, 231, 183, .09);
+  color: var(--lime);
+  font-size: .85rem;
+  font-weight: 600;
+}
+
+/* Выпадающий список в модальном окне */
+select.field__input {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+                    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 38px;
+}
+select.field__input option { background: #14142a; color: var(--text); }
 
 /* Индикатор подключённой модели */
 .engine {
@@ -1783,6 +1811,69 @@ const LIMITS = {
 };
 
 
+/* ────────── assets/js/ai/connection.js ────────── */
+
+/**
+ * Настройки подключения к Ollama, которые пользователь вводит сам.
+ *
+ * Ключ хранится только в localStorage этого браузера: он не попадает ни в
+ * код сайта, ни в репозиторий, ни на чужие устройства. Отправляется он
+ * единственному адресату — самой Ollama.
+ */
+
+
+
+const KEY = `${APP.storagePrefix}connection`;
+
+const CLOUD_HOST = 'https://ollama.com';
+const LOCAL_HOST = 'http://localhost:11434';
+
+const DEFAULTS = {
+  /** 'off' — встроенный движок, 'cloud' — облако по ключу, 'local' — Ollama на этом компьютере. */
+  mode: 'off',
+  apiKey: '',
+  model: '',
+  host: '',
+};
+
+function readConnection() {
+  try {
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') };
+  } catch {
+    return { ...DEFAULTS };
+  }
+}
+
+function saveConnection(patch) {
+  const next = { ...readConnection(), ...patch };
+  try {
+    localStorage.setItem(KEY, JSON.stringify(next));
+  } catch {
+    /* приватный режим — настройки живут до перезагрузки */
+  }
+  return next;
+}
+
+function clearConnection() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch { /* ничего не делаем */ }
+  return { ...DEFAULTS };
+}
+
+/** Адрес Ollama для текущего режима. */
+function hostFor(connection) {
+  if (connection.host) return connection.host.replace(/\/+$/, '');
+  return connection.mode === 'local' ? LOCAL_HOST : CLOUD_HOST;
+}
+
+/** Модель по умолчанию для текущего режима. */
+function modelFor(connection) {
+  if (connection.model) return connection.model;
+  return connection.mode === 'local' ? 'llama3.2' : 'gpt-oss:120b-cloud';
+}
+
+
 /* ────────── assets/js/ai/api-provider.js ────────── */
 
 /**
@@ -1885,6 +1976,281 @@ const apiProvider = {
     const data = await request('translate', { text: idea });
     return { text: data.text, source: 'api' };
   },
+};
+
+
+/* ────────── assets/js/ai/ollama-tasks.js ────────── */
+
+/**
+ * Задачи для Ollama: промпты для модели и JSON-схемы ответов.
+ *
+ * Модуль не знает, как именно выполняется запрос — функция `chat` приходит
+ * снаружи. Благодаря этому одна и та же логика работает и на сервере
+ * (server/ollama.mjs), и прямо в браузере (ai/direct-provider.js).
+ */
+
+const ENGINEER = `You are a professional prompt engineer for AI image generators
+(Midjourney, Stable Diffusion, Flux, DALL-E).
+
+Rules:
+- Always answer in English, regardless of the language of the request.
+- Write comma-separated visual keywords, never full sentences or explanations.
+- Be concrete and visual: describe what the camera would see.
+- Never invent a different subject than the one the user described.
+- Answer with JSON only, matching the requested schema.`;
+
+/** Структура промпта, принятая на сайте. */
+const SECTIONS = ['subject', 'style', 'environment', 'camera', 'lighting', 'quality', 'detail', 'format'];
+
+const GENERATE_SCHEMA = {
+  type: 'object',
+  properties: {
+    ...Object.fromEntries(SECTIONS.map((key) => [key, { type: 'string' }])),
+    negative: { type: 'string' },
+  },
+  required: [...SECTIONS, 'negative'],
+};
+
+const PING_SCHEMA = {
+  type: 'object',
+  properties: { ok: { type: 'boolean' } },
+  required: ['ok'],
+};
+
+const TEXT_SCHEMA = {
+  type: 'object',
+  properties: { text: { type: 'string' } },
+  required: ['text'],
+};
+
+/** Описание выбранных настроек — чтобы модель их учитывала. */
+function describe(settings = {}) {
+  return [
+    settings.style && `style: ${settings.style}`,
+    settings.camera && `camera: ${settings.camera}`,
+    settings.lighting && `lighting: ${settings.lighting}`,
+    settings.quality && `quality: ${settings.quality}`,
+    settings.aspect && `aspect ratio: ${settings.aspect}`,
+  ].filter(Boolean).join(', ');
+}
+
+/** Собирает ответ модели в промпт с той же разбивкой по строкам. */
+function assemble(parts) {
+  const lines = SECTIONS.map((key) => String(parts[key] || '').trim()).filter(Boolean);
+  return { prompt: lines.join(', '), multiline: lines.join(',\n') };
+}
+
+/**
+ * Создаёт набор задач поверх переданной функции запроса.
+ * @param {(request: {system: string, user: string, schema: object}) => Promise<object>} chat
+ */
+function createTasks(chat) {
+  async function generate({ idea, settings }) {
+    const parts = await chat({
+      system: ENGINEER,
+      user: `Build an image prompt from this description: "${idea}"
+
+Selected settings — ${describe(settings)}.
+
+Fill every field with comma-separated English keywords:
+- subject: what is depicted, translated from the description
+- style: the artistic style
+- environment: surroundings and atmosphere
+- camera: shot type, lens, angle
+- lighting: light sources and mood
+- quality: resolution and sharpness
+- detail: level of detail and finishing touches
+- format: composition for the aspect ratio
+- negative: what the image must NOT contain`,
+      schema: GENERATE_SCHEMA,
+    });
+
+    return { ...assemble(parts), negative: parts.negative || '' };
+  }
+
+  async function improve({ prompt, settings }) {
+    const parts = await chat({
+      system: ENGINEER,
+      user: `Improve this image prompt without changing its subject.
+Add composition, color grading, atmosphere and a finishing touch.
+
+Prompt: "${prompt}"
+Settings — ${describe(settings)}.
+
+Return the improved prompt in the same fields.`,
+      schema: GENERATE_SCHEMA,
+    });
+
+    return { ...assemble(parts), negative: parts.negative || '' };
+  }
+
+  async function variants({ idea, settings, count = 3 }) {
+    const data = await chat({
+      system: ENGINEER,
+      user: `Create ${count} different image prompts for the same description: "${idea}".
+Settings — ${describe(settings)}.
+
+Keep the subject identical in every variant; change mood, lighting, composition
+and environment. Give each variant a short Russian name (1-2 words).`,
+      schema: {
+        type: 'object',
+        properties: {
+          variants: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { name: { type: 'string' }, prompt: { type: 'string' } },
+              required: ['name', 'prompt'],
+            },
+          },
+        },
+        required: ['variants'],
+      },
+    });
+
+    return {
+      variants: (data.variants || []).slice(0, count).map((variant, index) => ({
+        id: `ai-${index}`,
+        name: variant.name || `Вариант ${index + 1}`,
+        prompt: variant.prompt,
+        multiline: String(variant.prompt).split(/,\s*/).join(',\n'),
+      })),
+    };
+  }
+
+  async function translate({ text }) {
+    const data = await chat({
+      system: ENGINEER,
+      user: `Translate this image prompt into English keywords. Keep every detail.
+
+Text: "${text}"`,
+      schema: TEXT_SCHEMA,
+    });
+
+    return { text: data.text };
+  }
+
+  async function translateRu({ text, idea }) {
+    const data = await chat({
+      system: `Ты переводишь промпты для генераторов изображений на русский язык.
+Отвечай только JSON по схеме. Перевод должен быть понятным и естественным,
+термины фотографии и рендера переводи принятыми в русском языке словами.`,
+      user: `Перескажи по-русски, что описывает этот промпт. Сохрани разбивку по строкам.
+${idea ? `Исходное описание пользователя: "${idea}" — используй его для первой строки.` : ''}
+
+Промпт:
+${text}`,
+      schema: TEXT_SCHEMA,
+    });
+
+    return { text: data.text };
+  }
+
+  /** Короткая проверка связи. */
+  async function ping() {
+    const data = await chat({
+      system: 'Reply with JSON only.',
+      user: 'Return {"ok": true}.',
+      schema: PING_SCHEMA,
+    });
+    return Boolean(data.ok);
+  }
+
+  return {
+    generate,
+    improve,
+    variants,
+    translate,
+    translateRu,
+    'translate-ru': translateRu,
+    ping,
+  };
+}
+
+
+/* ────────── assets/js/ai/direct-provider.js ────────── */
+
+/**
+ * Прямое обращение к Ollama из браузера.
+ *
+ * Работает без сервера: страница сама отправляет запрос в Ollama с ключом,
+ * который пользователь ввёл в настройках. Ключ остаётся в его браузере.
+ *
+ * Ограничение, которое здесь не обойти: браузер выполнит запрос, только если
+ * Ollama разрешает обращения с адреса этой страницы (CORS). Если не разрешает,
+ * запрос не уйдёт, и мы сообщаем об этом понятным текстом — гадать
+ * пользователю не придётся.
+ */
+
+
+
+
+
+/** Человеческое объяснение вместо «Failed to fetch». */
+function explain(error, connection) {
+  const message = String(error?.message || error);
+
+  if (/Failed to fetch|NetworkError|load failed/i.test(message)) {
+    return connection.mode === 'local'
+      ? 'Браузер не смог обратиться к Ollama на этом компьютере. Проверьте, что приложение Ollama запущено, и что ему разрешены обращения с этой страницы (переменная OLLAMA_ORIGINS).'
+      : 'Браузер не смог обратиться к ollama.com напрямую — сервис не разрешает запросы со страниц сайтов. Ключ здесь ни при чём: нужен запуск сервера PromptAI, он обращается к Ollama сам.';
+  }
+  if (/\b401\b|\b403\b/.test(message)) return 'Ollama не приняла ключ. Проверьте, что он скопирован полностью.';
+  if (/\b404\b/.test(message)) return 'Такой модели нет. Список облачных моделей — на ollama.com/search?c=cloud';
+  if (/aborted|timeout/i.test(message)) return 'Ollama не ответила вовремя. Попробуйте модель полегче.';
+  return message;
+}
+
+/** Запрос к Ollama с ответом строго по JSON-схеме. */
+async function chat({ system, user, schema }) {
+  const connection = readConnection();
+
+  const response = await fetch(`${hostFor(connection)}/api/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(connection.apiKey ? { Authorization: `Bearer ${connection.apiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      model: modelFor(connection),
+      stream: false,
+      format: schema,
+      options: { temperature: 0.8 },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+    signal: AbortSignal.timeout(AI.timeoutMs),
+  });
+
+  const raw = await response.text();
+
+  if (!response.ok) {
+    let detail = raw.slice(0, 300);
+    try {
+      detail = JSON.parse(raw).error || detail;
+    } catch { /* не JSON */ }
+    throw new Error(`Ollama ${response.status}: ${detail}`);
+  }
+
+  const content = JSON.parse(raw)?.message?.content;
+  if (!content) throw new Error('Ollama вернула пустой ответ');
+
+  return JSON.parse(content);
+}
+
+const tasks = createTasks(chat);
+
+const directProvider = {
+  id: 'direct',
+  generate: tasks.generate,
+  improve: tasks.improve,
+  variants: tasks.variants,
+  translate: tasks.translate,
+  translateRu: tasks.translateRu,
+  translateIdea: ({ idea }) => tasks.translate({ text: idea }),
+  ping: tasks.ping,
 };
 
 
@@ -3459,11 +3825,14 @@ const localProvider = {
 /**
  * Точка входа для всех AI-операций.
  *
- * UI обращается только сюда и ничего не знает о том, считается промпт
- * локально или на сервере. В режиме 'auto' сайт один раз спрашивает бэкенд,
- * жив ли он: если сервер с моделью не запущен (например, страницу открыли
- * файлом с диска), всё продолжает работать на встроенном движке.
+ * UI обращается только сюда и не знает, кто считает промпт. Порядок выбора:
+ *
+ *   1. настройки пользователя — если он подключил Ollama своим ключом;
+ *   2. сервер PromptAI — если сайт открыт с запущенного сервера;
+ *   3. встроенный движок — всегда доступен, работает без сети.
  */
+
+
 
 
 
@@ -3472,13 +3841,34 @@ const localProvider = {
 const PROVIDERS = {
   local: localProvider,
   api: apiProvider,
+  direct: directProvider,
 };
 
-/** Что известно о бэкенде: null — ещё не проверяли. */
+/** Что известно о текущем движке: null — ещё не определяли. */
 let detected = null;
 let detection = null;
 
-/** Разовая проверка доступности бэкенда. */
+/** Сбрасывает выбор — вызывается после изменения настроек подключения. */
+function resetProvider() {
+  detected = null;
+  detection = null;
+}
+
+async function probeBackend() {
+  if (!/^https?:$/.test(globalThis.location?.protocol || '')) return null;
+
+  try {
+    const response = await fetch(AI.healthEndpoint, {
+      signal: AbortSignal.timeout(AI.healthTimeoutMs),
+    });
+    if (!response.ok) throw new Error(String(response.status));
+    return await response.json();
+  } catch {
+    // Сервера нет — это штатный режим, не ошибка.
+    return null;
+  }
+}
+
 async function detect() {
   if (AI.provider !== 'auto') {
     return { provider: PROVIDERS[AI.provider] || localProvider, info: null };
@@ -3486,25 +3876,21 @@ async function detect() {
   if (detected) return detected;
 
   detection ||= (async () => {
-    // На file:// запрос к /api/health невозможен в принципе, и браузер пишет
-    // в консоль ошибку. Проверяем только там, где бэкенд вообще может быть.
-    if (!/^https?:$/.test(globalThis.location?.protocol || '')) {
-      detected = { provider: localProvider, info: null };
+    const connection = readConnection();
+
+    if (connection.mode !== 'off') {
+      detected = {
+        provider: directProvider,
+        info: { model: connection.model, mode: connection.mode, source: 'direct' },
+      };
       return detected;
     }
 
-    try {
-      const response = await fetch(AI.healthEndpoint, {
-        signal: AbortSignal.timeout(AI.healthTimeoutMs),
-      });
-      if (!response.ok) throw new Error(String(response.status));
+    const health = await probeBackend();
+    detected = health
+      ? { provider: apiProvider, info: { ...health, source: 'server' } }
+      : { provider: localProvider, info: null };
 
-      const info = await response.json();
-      detected = { provider: apiProvider, info };
-    } catch {
-      // Бэкенда нет — это нормальный режим работы, не ошибка.
-      detected = { provider: localProvider, info: null };
-    }
     return detected;
   })();
 
@@ -3522,7 +3908,7 @@ async function run(task, payload) {
 
     if (provider.id !== 'local' && AI.fallbackToLocal) {
       const result = await localProvider[task](payload);
-      return { ...result, degraded: true };
+      return { ...result, degraded: true, reason: error };
     }
     throw error;
   }
@@ -3534,7 +3920,7 @@ const ai = {
   variants:      (payload) => run('variants', payload),
   translate:     (payload) => run('translate', payload),
   translateRu:   (payload) => run('translateRu', payload),
-  /** Какой движок работает сейчас: { provider, info } — info есть только у бэкенда. */
+  /** Какой движок работает сейчас: { provider, info }. */
   status:        () => detect(),
 };
 
@@ -4324,6 +4710,8 @@ function toast(message, type = 'info', duration = 2600) {
 
 
 
+
+
 /* ──────────────────────────  состояние сессии  ────────────────────────── */
 
 const state = {
@@ -4614,6 +5002,111 @@ function showPaywall(limits) {
   });
 }
 
+/**
+ * Окно подключения собственной модели.
+ *
+ * Ключ сохраняется только в этом браузере и уходит только в Ollama.
+ * Перед сохранением делается пробный запрос: если он не проходит,
+ * пользователь сразу видит причину, а не молчаливый отказ.
+ */
+function openConnectModal() {
+  const current = readConnection();
+
+  openModal({
+    title: 'Подключить свой AI',
+    subtitle: 'Промпты будет писать модель Ollama вместо встроенного движка.',
+    body: `
+      <div class="field">
+        <label class="field__label" for="connMode">Откуда брать модель</label>
+        <select class="field__input" id="connMode">
+          <option value="cloud">Облако Ollama — по ключу</option>
+          <option value="local">Ollama на этом компьютере</option>
+        </select>
+      </div>
+
+      <div class="field" id="keyField">
+        <label class="field__label" for="connKey">Ключ с ollama.com/settings/keys</label>
+        <input class="field__input" id="connKey" type="password" autocomplete="off" spellcheck="false" placeholder="вставьте ключ сюда">
+      </div>
+
+      <div class="field">
+        <label class="field__label" for="connModel">Модель</label>
+        <input class="field__input" id="connModel" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-oss:120b-cloud">
+      </div>
+
+      <p class="field__error" id="connError"></p>
+      <div id="connResult"></div>
+
+      <button class="btn btn--primary btn--block" type="button" id="connTest">
+        <span class="btn__label">Проверить и подключить</span><span class="btn__spinner"></span>
+      </button>
+      ${current.mode !== 'off' ? '<button class="btn btn--block btn--danger" type="button" id="connOff">Отключить</button>' : ''}
+
+      <p class="modal__sub">
+        Ключ сохраняется только в этом браузере и отправляется только в Ollama.
+        Мы его не видим, в код сайта он не попадает.
+      </p>`,
+    onMount(modal) {
+      const mode = modal.querySelector('#connMode');
+      const key = modal.querySelector('#connKey');
+      const model = modal.querySelector('#connModel');
+      const keyField = modal.querySelector('#keyField');
+      const error = modal.querySelector('#connError');
+      const result = modal.querySelector('#connResult');
+      const test = modal.querySelector('#connTest');
+
+      mode.value = current.mode === 'local' ? 'local' : 'cloud';
+      key.value = current.apiKey;
+      model.value = current.model;
+
+      const sync = () => {
+        keyField.hidden = mode.value === 'local';
+        model.placeholder = mode.value === 'local' ? 'llama3.2' : 'gpt-oss:120b-cloud';
+      };
+      sync();
+      mode.addEventListener('change', sync);
+
+      test.addEventListener('click', async () => {
+        error.textContent = '';
+        result.innerHTML = '';
+        setLoading(test, true);
+
+        // Настройки нужно сохранить до проверки: клиент читает их сам.
+        const connection = saveConnection({
+          mode: mode.value,
+          apiKey: mode.value === 'local' ? '' : key.value.trim(),
+          model: model.value.trim(),
+        });
+        resetProvider();
+
+        try {
+          await directProvider.ping();
+          renderQuota();
+          showEngine();
+          result.innerHTML = '<p class="conn-ok">Модель отвечает. AI подключён.</p>';
+          toast('AI подключён — промпты пишет модель', 'success', 3200);
+          setTimeout(closeModal, 1200);
+        } catch (failure) {
+          clearConnection();
+          resetProvider();
+          showEngine();
+          error.textContent = explain(failure, connection);
+        } finally {
+          setLoading(test, false);
+        }
+      });
+
+      modal.querySelector('#connOff')?.addEventListener('click', () => {
+        clearConnection();
+        resetProvider();
+        closeModal();
+        showEngine();
+        toast('Вернулись на встроенный движок', 'info');
+      });
+    },
+  });
+}
+
 function openAccountModal() {
   const user = auth.current();
   if (!user) {
@@ -4814,6 +5307,10 @@ function bindComposer() {
 
   input.setAttribute('maxlength', String(LIMITS.ideaMaxLength));
 
+  $('#engineHint').addEventListener('click', (event) => {
+    if (event.target.closest('[data-action="connect"]')) openConnectModal();
+  });
+
   $('#diceBtn').addEventListener('click', () => {
     const idea = pick(IDEA_SEEDS.filter((seed) => seed !== input.value));
     input.value = idea;
@@ -5009,14 +5506,21 @@ function bindChrome() {
  * штатный режим, а не поломка, пугать пользователя нечем.
  */
 async function showEngine() {
+  const hint = $('#engineHint');
+  if (!hint) return;
+
   try {
     const { info } = await ai.status();
-    if (!info?.model) return;
 
-    const hint = $('#engineHint');
-    if (!hint) return;
+    if (!info) {
+      hint.innerHTML = `Промпты собирает встроенный движок.
+        <button class="link-btn" type="button" data-action="connect">Подключить свой AI</button>`;
+      return;
+    }
 
-    hint.innerHTML = `<span class="engine"><span class="engine__dot"></span>AI подключён: ${escapeHtml(info.model)}</span>`;
+    const name = info.model || (info.mode === 'local' ? 'Ollama на этом компьютере' : 'Ollama');
+    hint.innerHTML = `<span class="engine"><span class="engine__dot"></span>AI подключён: ${escapeHtml(name)}</span>
+      <button class="link-btn" type="button" data-action="connect">изменить</button>`;
   } catch {
     /* молча остаёмся на встроенном движке */
   }
