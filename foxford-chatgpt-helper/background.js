@@ -1,7 +1,8 @@
 /**
  * Service worker.
- * Никаких сетевых запросов, API-ключей, cookies или токенов:
- * он только открывает вкладку https://chatgpt.com/ и показывает системное уведомление.
+ * Никаких сетевых запросов, API-ключей, cookies или токенов: он открывает вкладку
+ * https://chatgpt.com/ (в уже авторизованной сессии пользователя), передаёт туда
+ * промпт через chrome.storage.local и показывает уведомление. Вход в аккаунт не выполняется.
  */
 
 const CHATGPT_URL = 'https://chatgpt.com/';
@@ -11,10 +12,16 @@ const DEFAULTS = {
   theme: 'auto',
   detail: 'normal',
   extraInstruction: '',
-  systemNotification: true
+  systemNotification: true,
+  autoSend: true
 };
 
-async function openChatGpt(sourceTab) {
+async function openChatGpt(sourceTab, prompt) {
+  // Одноразовый промпт кладём в хранилище ДО открытия вкладки: content-script
+  // на chatgpt.com заберёт его и вставит в поле чата.
+  if (prompt) {
+    await chrome.storage.local.set({ pendingPrompt: { text: prompt, ts: Date.now() } });
+  }
   const createProps = { url: CHATGPT_URL, active: true };
   if (sourceTab && typeof sourceTab.index === 'number') {
     createProps.index = sourceTab.index + 1;
@@ -44,8 +51,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       switch (message?.type) {
         case 'OPEN_CHATGPT':
-          await openChatGpt(sender.tab || message.sourceTab);
-          if (message.notify !== false) await notify(NOTICE_TEXT);
+          await openChatGpt(sender.tab || message.sourceTab, message.prompt);
+          if (message.notify !== false) await notify(message.prompt ? 'Открываю ChatGPT и вставляю задание…' : NOTICE_TEXT);
           sendResponse({ ok: true });
           break;
         case 'NOTIFY':
@@ -68,7 +75,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   // Убираем данные прошлой версии, которая работала через API (ключ, модель и т. п.).
-  await chrome.storage.local.remove(['apiKey', 'model', 'maxTokens', 'enabled']);
+  await chrome.storage.local.remove(['apiKey', 'model', 'maxTokens', 'enabled', 'pendingPrompt']);
   const current = await chrome.storage.local.get(DEFAULTS);
   await chrome.storage.local.set({ ...DEFAULTS, ...current });
   if (details.reason === 'install') chrome.runtime.openOptionsPage();

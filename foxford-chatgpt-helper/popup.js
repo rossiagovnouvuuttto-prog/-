@@ -1,6 +1,5 @@
 'use strict';
 
-const NOTICE_TEXT = 'Задание скопировано — вставьте его в ChatGPT';
 const FOXFORD_RE = /^https:\/\/([a-z0-9-]+\.)*foxford\.ru\//i;
 
 const statusEl = document.getElementById('status');
@@ -61,11 +60,15 @@ async function run(openChatGpt) {
 
     await sendToTab(tab.id, {
       type: 'SHOW_NOTICE',
-      title: NOTICE_TEXT,
-      text: 'Вставьте его в поле сообщения: Ctrl+V (⌘V на Mac).'
+      title: 'Открываю ChatGPT',
+      text: 'Расширение вставит задание в чат.'
     });
-    // вкладку открывает фоновый скрипт: popup закроется, как только она станет активной
-    await chrome.runtime.sendMessage({ type: 'OPEN_CHATGPT', sourceTab: { index: tab.index, windowId: tab.windowId } });
+    // вкладку открывает фоновый скрипт; промпт он передаст content-script'у ChatGPT
+    await chrome.runtime.sendMessage({
+      type: 'OPEN_CHATGPT',
+      prompt: response.prompt,
+      sourceTab: { index: tab.index, windowId: tab.windowId }
+    });
     window.close();
   } catch (e) {
     setStatus('Не удалось скопировать: ' + e.message, 'error');

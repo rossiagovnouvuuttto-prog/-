@@ -4,7 +4,8 @@ const DEFAULTS = {
   theme: 'auto',
   detail: 'normal',
   extraInstruction: '',
-  systemNotification: true
+  systemNotification: true,
+  autoSend: true
 };
 
 const els = {
@@ -12,6 +13,7 @@ const els = {
   detail: document.getElementById('detail'),
   extraInstruction: document.getElementById('extraInstruction'),
   systemNotification: document.getElementById('systemNotification'),
+  autoSend: document.getElementById('autoSend'),
   preview: document.getElementById('preview'),
   status: document.getElementById('status')
 };
@@ -74,6 +76,7 @@ async function load() {
   els.detail.value = stored.detail;
   els.extraInstruction.value = stored.extraInstruction;
   els.systemNotification.checked = Boolean(stored.systemNotification);
+  els.autoSend.checked = Boolean(stored.autoSend);
   applyTheme(stored.theme);
   renderPreview();
 }
@@ -83,14 +86,15 @@ async function save() {
     theme: els.theme.value,
     detail: els.detail.value,
     extraInstruction: els.extraInstruction.value.trim().slice(0, 500),
-    systemNotification: els.systemNotification.checked
+    systemNotification: els.systemNotification.checked,
+    autoSend: els.autoSend.checked
   });
   applyTheme(els.theme.value);
   renderPreview();
   setStatus('Настройки сохранены.', 'ok');
 }
 
-[els.theme, els.detail, els.systemNotification].forEach((el) => el.addEventListener('change', save));
+[els.theme, els.detail, els.systemNotification, els.autoSend].forEach((el) => el.addEventListener('change', save));
 
 let typingTimer = null;
 els.extraInstruction.addEventListener('input', () => {

@@ -1,14 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Разбор заданий Foxford → ChatGPT",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "default_locale": "ru",
-  "description": "Собирает текст задания на foxford.ru в аккуратный промпт, копирует его и открывает ChatGPT. Без API-ключей.",
+  "description": "Собирает задание на foxford.ru в промпт и сам вставляет его в открытый чат ChatGPT. Без API-ключей.",
   "minimum_chrome_version": "116",
-  "permissions": ["storage", "notifications"],
+  "permissions": [
+    "storage",
+    "notifications"
+  ],
   "host_permissions": [
     "https://foxford.ru/*",
-    "https://*.foxford.ru/*"
+    "https://*.foxford.ru/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -16,9 +21,27 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://foxford.ru/*", "https://*.foxford.ru/*"],
-      "js": ["content.js"],
-      "css": ["styles.css"],
+      "matches": [
+        "https://foxford.ru/*",
+        "https://*.foxford.ru/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "chatgpt.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }

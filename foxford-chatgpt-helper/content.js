@@ -344,8 +344,10 @@
         : prepared.task.fromSelection ? 'Использован выделенный текст.' : 'Варианты ответа не найдены — проверьте текст перед отправкой.';
 
       if (openChatGpt) {
-        showToast(NOTICE_TEXT, 'Вставьте его в поле сообщения: Ctrl+V (⌘V на Mac). ' + hint, 'ok', 8000);
-        const response = await sendMessage({ type: 'OPEN_CHATGPT' });
+        showToast('Открываю ChatGPT', 'Расширение вставит задание в чат. ' + hint + ' Если хотите — вставьте вручную (Ctrl+V).', 'ok', 8000);
+        // промпт передаём фоновому скрипту: он сохранит его и откроет вкладку,
+        // где content-script вставит текст в поле чата
+        const response = await sendMessage({ type: 'OPEN_CHATGPT', prompt: prepared.prompt });
         if (!response.ok) {
           showToast('Не удалось открыть ChatGPT', (response.message || '') + ' Откройте chatgpt.com вручную — задание уже в буфере.', 'error', 8000);
         }
