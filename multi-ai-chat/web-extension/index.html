@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05060f">
+<meta name="description" content="Multi AI Chat — ChatGPT и DeepSeek через ваши авторизованные веб-сессии, без API-ключей.">
+<title>Multi AI Chat</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234f7cff'/%3E%3Cstop offset='1' stop-color='%23a855f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 24h28M18 32h20M18 40h24' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ─────────────── Sidebar ─────────────── -->
+  <aside class="sidebar" id="sidebar" aria-label="Панель чатов">
+    <div class="sidebar-top">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-text">Multi&nbsp;AI&nbsp;Chat</span>
+      </div>
+      <button class="icon-btn sidebar-close" id="sidebarClose" aria-label="Закрыть меню">✕</button>
+    </div>
+
+    <button class="btn-new" id="newChatBtn">
+      <span class="plus" aria-hidden="true">+</span> Новый чат
+    </button>
+
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" class="search-icon" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="search" id="searchInput" placeholder="Поиск" aria-label="Поиск по чатам" autocomplete="off">
+    </div>
+
+    <div class="section-label">История чатов</div>
+    <nav class="chat-list" id="chatList" aria-label="История чатов"></nav>
+
+    <div class="sidebar-foot">
+      <button class="foot-btn" id="settingsBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5v.2a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H2a2 2 0 110-4h.1A1.7 1.7 0 003.6 9a1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H8a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1h.2a2 2 0 110 4H21a1.7 1.7 0 00-1.5 1z"/></svg>
+        Настройки
+      </button>
+      <button class="foot-btn danger" id="clearAllBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+        Очистить историю
+      </button>
+    </div>
+  </aside>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <!-- ─────────────── Main ─────────────── -->
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menuBtn" aria-label="Открыть меню">☰</button>
+
+      <div class="model-info">
+        <div class="model-name" id="modelName">—</div>
+        <div class="model-status" id="modelStatus">
+          <span class="dot" aria-hidden="true"></span><span id="statusText">Готов</span>
+        </div>
+      </div>
+
+      <button class="btn-model" id="pickModelBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        <span>Выбрать модель</span>
+      </button>
+    </header>
+
+    <div class="arena" aria-hidden="true"><span class="pokeball-bg"></span></div>
+    <div class="messages" id="messages" role="log" aria-live="polite"></div>
+
+    <div class="composer-wrap">
+      <div class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Напишите сообщение..." aria-label="Сообщение"></textarea>
+        <button class="btn-send" id="sendBtn" aria-label="Отправить" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12L4 4l6 8-6 8z"/></svg>
+        </button>
+      </div>
+      <button class="btn-stop" id="stopBtn" hidden>
+        <span class="stop-square" aria-hidden="true"></span> Остановить
+      </button>
+      <div class="composer-hint">
+        <kbd>Enter</kbd> — отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> — новая строка
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ─────────────── Model picker ─────────────── -->
+<div class="modal" id="modelModal" hidden>
+  <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="modelModalTitle">
+    <header class="modal-head">
+      <h2 id="modelModalTitle">Выбор нейросети</h2>
+      <button class="icon-btn" data-close aria-label="Закрыть">✕</button>
+    </header>
+
+    <div class="modal-search">
+      <svg viewBox="0 0 24 24" class="search-icon" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="search" id="modelSearch" placeholder="Поиск модели" autocomplete="off">
+    </div>
+
+    <div class="picker-featured">
+      <div class="picker-featured-label">Быстрый выбор</div>
+      <div class="starters starters-compact" id="pickerStarters"></div>
+    </div>
+
+    <div class="picker">
+      <nav class="picker-cats" id="pickerCats" aria-label="Категории"></nav>
+      <div class="picker-models" id="pickerModels"></div>
+    </div>
+
+    
+  </div>
+</div>
+
+<!-- ─────────────── Settings ─────────────── -->
+<div class="modal" id="settingsModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <header class="modal-head">
+      <h2 id="settingsTitle">Настройки</h2>
+      <button class="icon-btn" data-close aria-label="Закрыть">✕</button>
+    </header>
+
+    <div class="modal-body">
+      <div class="field">
+        <label>Стиль оформления</label>
+        <div class="themes" id="themePicker"></div>
+        <p class="hint">Меняет оформление всего чата.</p>
+      </div>
+
+      <div class="field">
+        <label>Подключение</label>
+        <p class="hint">API-ключи не нужны. Расширение использует ваши текущие входы на
+          <a href="https://chatgpt.com/" target="_blank" rel="noopener">ChatGPT</a> и
+          <a href="https://chat.deepseek.com/" target="_blank" rel="noopener">DeepSeek</a>.
+          Если провайдер попросит войти, один раз авторизуйтесь на его сайте в этом браузере.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="systemPrompt">System Prompt</label>
+        <textarea id="systemPrompt" rows="4" placeholder="Ты полезный ассистент. Отвечай на русском языке."></textarea>
+        <p class="hint">Задаёт характер и правила ответа модели.</p>
+      </div>
+
+      <div class="field" hidden>
+        <label for="temperature">Temperature <output id="temperatureOut">0.7</output></label>
+        <input type="range" id="temperature" min="0" max="2" step="0.05" value="0.7">
+      </div>
+
+      <div class="field" hidden>
+        <label for="maxTokens">Max Tokens <output id="maxTokensOut">2048</output></label>
+        <input type="range" id="maxTokens" min="128" max="8192" step="128" value="2048">
+      </div>
+
+      <div class="field" hidden>
+        <label for="topP">Top P <output id="topPOut">0.95</output></label>
+        <input type="range" id="topP" min="0.05" max="1" step="0.05" value="0.95">
+      </div>
+    </div>
+
+    <footer class="modal-foot">
+      <button class="btn-ghost" id="resetSettings">Сбросить</button>
+      <button class="btn-primary" data-close>Готово</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ─────────────── Rename ─────────────── -->
+<div class="modal" id="renameModal" hidden>
+  <div class="modal-card modal-narrow" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
+    <header class="modal-head">
+      <h2 id="renameTitle">Переименовать чат</h2>
+      <button class="icon-btn" data-close aria-label="Закрыть">✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="field">
+        <input type="text" id="renameInput" maxlength="80" aria-label="Название чата">
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn-ghost" data-close>Отмена</button>
+      <button class="btn-primary" id="renameSave">Сохранить</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="assertive"></div>
+
+<script src="/static/api.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

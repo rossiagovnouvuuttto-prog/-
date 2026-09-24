@@ -1,0 +1,40 @@
+{
+  "default": "chatgpt-web",
+  "featured": [
+    {
+      "key": "chatgpt",
+      "name": "ChatGPT",
+      "icon": "◉",
+      "desc": "Ваша веб-сессия ChatGPT",
+      "type": "normal",
+      "candidates": ["chatgpt-web"]
+    },
+    {
+      "key": "deepseek",
+      "name": "DeepSeek",
+      "icon": "🐋",
+      "desc": "Ваша веб-сессия DeepSeek",
+      "type": "normal",
+      "candidates": ["deepseek-web"]
+    }
+  ],
+  "categories": [
+    {
+      "id": "web",
+      "name": "Веб-нейросети",
+      "icon": "🌐",
+      "models": [
+        {
+          "id": "chatgpt-web",
+          "name": "ChatGPT Web",
+          "desc": "Работает через chatgpt.com без API-ключа"
+        },
+        {
+          "id": "deepseek-web",
+          "name": "DeepSeek Web",
+          "desc": "Работает через chat.deepseek.com без API-ключа"
+        }
+      ]
+    }
+  ]
+}
