@@ -1,15 +1,14 @@
-"""A stand-in for the Hugging Face router, used to exercise app.py locally.
+"""A stand-in for the Ollama Cloud API, used to exercise app.py locally.
 
 The model id selects the behaviour, so every error branch in the real backend
 can be driven deterministically:
 
   mock/ok             -> normal streamed answer (markdown, code, table)
   mock/unauthorized   -> 401 invalid token
-  mock/gated          -> 403 gated repo
   mock/missing        -> 404 unknown model
   mock/ratelimit      -> 429
   mock/loading        -> 503 model loading
-  mock/noprovider     -> 400 no provider supports this model
+  mock/nobalance      -> 402 usage limit reached
   mock/midstream      -> starts streaming, then emits an error event
   mock/empty          -> streams nothing at all
   mock/slow           -> streams very slowly (for abort / timeout tests)
@@ -39,7 +38,7 @@ app.add_middleware(
 
 ANSWER = """# Ответ модели
 
-Вот **пример** с `inline code`, ссылкой на [Hugging Face](https://huggingface.co) и списком:
+Вот **пример** с `inline code`, ссылкой на [Ollama](https://ollama.com) и списком:
 
 - первый пункт
 - второй пункт
@@ -58,8 +57,8 @@ def greet(name: str) -> str:
 
 | Модель | Провайдер | Скорость |
 | --- | --- | --- |
-| DeepSeek V3 | HF | быстро |
-| Qwen2.5 | HF | средне |
+| GPT-OSS 120B | Ollama | быстро |
+| Qwen3 Coder | Ollama | средне |
 
 > Цитата для проверки блока.
 
@@ -77,23 +76,25 @@ def chunk(delta: dict) -> str:
 
 
 ERRORS = {
-    "mock/unauthorized": (401, {"error": {"message": "Invalid credentials in Authorization header"}}),
-    "mock/gated": (403, {"error": {"message": "This repo is gated, you must accept the license"}}),
-    "mock/missing": (404, {"error": {"message": "Model not found"}}),
-    "mock/ratelimit": (429, {"error": {"message": "Rate limit reached"}}),
-    "mock/loading": (503, {"error": {"message": "Model is currently loading"}}),
-    "mock/noprovider": (400, {"error": {"message": "No provider supports this model for chat"}}),
+    "mock/unauthorized": (401, {"error": {"message": "invalid api key"}}),
+    "mock/missing": (404, {"error": {"message": "model not found"}}),
+    "mock/ratelimit": (429, {"error": {"message": "rate limit reached"}}),
+    "mock/loading": (503, {"error": {"message": "model is currently loading"}}),
+    "mock/nobalance": (402, {"error": {"message": "usage limit reached"}}),
 }
 
 
 # Models the fake router "serves". Chosen so featured resolution is exercised
 # in all three shapes: first candidate live (DeepSeek, Mistral), first candidate
 # retired so the family falls back (Qwen), and nothing live at all (Llama).
+# Models the stand-in "serves". Chosen so featured resolution is exercised in
+# all three shapes: first candidate live, first candidate retired so the card
+# falls back to a sibling, and a card whose family is served not at all.
 SERVED = {
-    "deepseek-ai/DeepSeek-V3-0324",
-    "Qwen/Qwen2.5-7B-Instruct",
-    "mistralai/Mistral-7B-Instruct-v0.3",
-    "google/gemma-2-9b-it",
+    "gpt-oss:120b-cloud",
+    "qwen3-coder:30b-cloud",
+    "gpt-oss:20b-cloud",
+    "glm-4.6:cloud",
     "mock/ok",
     "mock/slow",
     "mock/reasoning",
@@ -108,43 +109,8 @@ async def models():
     return {"object": "list", "data": [{"id": m, "object": "model"} for m in sorted(SERVED)]}
 
 
-# ---------------------------------------------------------------------------
-# DeepSeek's own API, served under /ds/v1 so one process stands in for both
-# providers. It wants an "sk-" key, which is how a mixed-up key is caught.
-# ---------------------------------------------------------------------------
-DS_SERVED = {"deepseek-chat", "deepseek-reasoner"}
-
-
-@app.get("/ds/v1/models")
-async def ds_models():
-    if os.environ.get("MOCK_DS_NO_LISTING"):
-        return JSONResponse(status_code=500, content={"error": {"message": "listing down"}})
-    return {"object": "list", "data": [{"id": m, "object": "model"} for m in sorted(DS_SERVED)]}
-
-
-@app.post("/ds/v1/chat/completions")
-async def ds_completions(request: Request):
-    body = await request.json()
-    model = body.get("model", "")
-    auth = request.headers.get("authorization", "")
-
-    if not auth.startswith("Bearer sk-"):
-        return JSONResponse(status_code=401, content={"error": {"message": "Invalid API key"}})
-    if os.environ.get("MOCK_DS_NO_BALANCE"):
-        return JSONResponse(status_code=402, content={"error": {"message": "Insufficient Balance"}})
-    if model not in DS_SERVED:
-        return JSONResponse(status_code=404, content={"error": {"message": "Model Not Exist"}})
-
-    if not body.get("stream"):
-        return {
-            "choices": [{"message": {"role": "assistant", "content": ANSWER}}],
-            "usage": {"prompt_tokens": 9, "completion_tokens": 240, "total_tokens": 249},
-        }
-    return StreamingResponse(stream_answer(model), media_type="text/event-stream")
-
-
 async def stream_answer(model: str):
-    """The streamed reply shared by both providers."""
+    """The streamed reply."""
     if model == "mock/empty":
         yield "data: [DONE]\n\n"
         return
@@ -165,39 +131,6 @@ async def stream_answer(model: str):
 
     yield f"data: {json.dumps({'usage': {'total_tokens': 252}})}\n\n"
     yield "data: [DONE]\n\n"
-
-
-# ---------------------------------------------------------------------------
-# Ollama Cloud, under /ol/v1. Its tags carry a colon, which is what proves the
-# router keeps "ollama:gpt-oss:120b-cloud" intact instead of cutting the tag.
-# ---------------------------------------------------------------------------
-OL_SERVED = {"gpt-oss:20b-cloud", "qwen3-coder:480b-cloud"}
-
-
-@app.get("/ol/v1/models")
-async def ol_models():
-    if os.environ.get("MOCK_OL_NO_LISTING"):
-        return JSONResponse(status_code=500, content={"error": {"message": "listing down"}})
-    return {"object": "list", "data": [{"id": m, "object": "model"} for m in sorted(OL_SERVED)]}
-
-
-@app.post("/ol/v1/chat/completions")
-async def ol_completions(request: Request):
-    body = await request.json()
-    model = body.get("model", "")
-    auth = request.headers.get("authorization", "")
-
-    if not auth.startswith("Bearer ol-"):
-        return JSONResponse(status_code=401, content={"error": {"message": "invalid api key"}})
-    if model not in OL_SERVED:
-        return JSONResponse(status_code=404, content={"error": {"message": "model not found"}})
-
-    if not body.get("stream"):
-        return {
-            "choices": [{"message": {"role": "assistant", "content": ANSWER}}],
-            "usage": {"prompt_tokens": 8, "completion_tokens": 240, "total_tokens": 248},
-        }
-    return StreamingResponse(stream_answer(model), media_type="text/event-stream")
 
 
 @app.post("/v1/chat/completions")

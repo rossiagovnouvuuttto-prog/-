@@ -1,6 +1,6 @@
 """Browser-level checks driven through Chromium (Playwright).
 
-Exercises the real UI against the running app + mock Hugging Face router.
+Exercises the real UI against the running app + the Ollama stand-in.
 """
 
 from __future__ import annotations
@@ -62,31 +62,25 @@ with sync_playwright() as pw:
 
     print("\n== starter cards ==")
     cards = page.locator(".welcome .starters .starter")
-    check("six starter cards", cards.count() == 6, str(cards.count()))
+    check("four starter cards", cards.count() == 4, str(cards.count()))
     names = [cards.nth(i).locator(".s-name").inner_text() for i in range(cards.count())]
-    check("DeepSeek card", "DeepSeek" in names, str(names))
-    check("Qwen card", "Qwen" in names, str(names))
-    check("Llama card", "Llama" in names, str(names))
-    check("Mistral card", "Mistral" in names, str(names))
-    check("DeepSeek API card", "DeepSeek API" in names, str(names))
-    check("Ollama card", "Ollama" in names, str(names))
+    for want in ("GPT-OSS", "Qwen3 Coder", "DeepSeek", "GPT-OSS 20B"):
+        check(f"{want} card", want in names, str(names))
 
-    descs = [cards.nth(i).locator(".s-desc").inner_text() for i in range(6)]
+    descs = [cards.nth(i).locator(".s-desc").inner_text() for i in range(4)]
     check("each card has a description", all(d.strip() for d in descs), str(descs))
-    icons = [cards.nth(i).locator(".s-icon").inner_text() for i in range(6)]
+    icons = [cards.nth(i).locator(".s-icon").inner_text() for i in range(4)]
     check("each card has an icon", all(i.strip() for i in icons), str(icons))
 
-    statuses = [cards.nth(i).locator(".s-status").inner_text().strip() for i in range(6)]
+    statuses = [cards.nth(i).locator(".s-status").inner_text().strip() for i in range(4)]
     check("status pill on every card",
           all(t in ("Online", "Offline") for t in statuses), str(statuses))
-    # Both provider keys are configured for this suite, so only Llama - whose
-    # family the stand-in router serves nothing of - reads Offline.
+    # The stand-in serves nothing of the DeepSeek family, so that card is the
+    # one that must read Offline.
     check("online and offline both rendered",
-          statuses.count("Online") == 5 and statuses.count("Offline") == 1, str(statuses))
-    check("the DeepSeek API card is live on its own key",
-          statuses[4] == "Online", str(statuses))
+          statuses.count("Online") == 3 and statuses.count("Offline") == 1, str(statuses))
     check("cards are type-coloured",
-          len({cards.nth(i).get_attribute("data-type") for i in range(6)}) == 6)
+          len({cards.nth(i).get_attribute("data-type") for i in range(4)}) == 4)
     check("bright card text is dark for contrast",
           cards.nth(0).evaluate("n => getComputedStyle(n).color") in
           ("rgb(10, 26, 51)",), cards.nth(0).evaluate("n => getComputedStyle(n).color"))
@@ -95,42 +89,36 @@ with sync_playwright() as pw:
     cards.nth(0).click()
     page.wait_for_timeout(300)
     check("clicking a card switches model",
-          "DeepSeek" in page.inner_text("#modelName"), page.inner_text("#modelName"))
+          "GPT-OSS" in page.inner_text("#modelName"), page.inner_text("#modelName"))
     check("chosen card is marked",
           page.locator(".welcome .starter.chosen").count() == 1)
 
     print("\n== model picker ==")
     page.click("#pickModelBtn")
     page.wait_for_selector("#modelModal:not([hidden])")
-    cats = page.inner_text("#pickerCats")
-    for name in ("DeepSeek", "Qwen", "Llama", "Mistral", "Gemma", "Microsoft"):
-        check(f"category {name}", name in cats)
-    check("model cards listed", page.locator(".model-card").count() >= 20,
+    check("category listed", "Ollama Cloud" in page.inner_text("#pickerCats"),
+          page.inner_text("#pickerCats"))
+    check("model cards listed", page.locator(".model-card").count() >= 8,
           str(page.locator(".model-card").count()))
     check("picker shows the starter row",
-          page.locator("#pickerStarters .starter").count() == 6,
+          page.locator("#pickerStarters .starter").count() == 4,
           str(page.locator("#pickerStarters .starter").count()))
     page.screenshot(path=str(SHOTS / "02-model-picker.png"))
 
-    page.click("#pickerCats button:has-text('DeepSeek')")
-    check("category filters", page.locator(".model-card").count() == 4,
-          str(page.locator(".model-card").count()))
     page.fill("#modelSearch", "coder")
-    # Qwen2.5-Coder on Hugging Face and Qwen3 Coder on Ollama
-    check("search filters", page.locator(".model-card").count() == 2,
+    check("search filters", page.locator(".model-card").count() == 1,
           str(page.locator(".model-card").count()))
     page.fill("#modelSearch", "")
-    page.click("#pickerCats button:has-text('Все модели')")
-    page.click(".model-card:has-text('Qwen2.5 72B')")
+    page.click(".model-card:has-text('Kimi K2')")
     page.wait_for_selector("#modelModal", state="hidden")
-    check("model switched", "Qwen2.5 72B" in page.inner_text("#modelName"),
+    check("model switched", "Kimi K2" in page.inner_text("#modelName"),
           page.inner_text("#modelName"))
 
-    print("\n== custom model by Model ID ==")
+    print("\n== custom model by name ==")
     page.click("#pickModelBtn")
     page.fill("#customModel", "not a model")
     page.click("#addModelBtn")
-    check("rejects bad Model ID", page.locator(".toast.err").count() >= 1)
+    check("rejects a bad name", page.locator(".toast.err").count() >= 1)
     page.fill("#customModel", "mock/ok")
     page.click("#addModelBtn")
     page.wait_for_selector("#modelModal", state="hidden")
@@ -150,7 +138,7 @@ with sync_playwright() as pw:
     check("renders heading", bubble.locator("h1").count() >= 1)
     check("renders bold", bubble.locator("strong").count() >= 1)
     check("renders inline code", bubble.locator("code:not(pre code)").count() >= 1)
-    check("renders link", bubble.locator("a[href='https://huggingface.co']").count() == 1)
+    check("renders link", bubble.locator("a[href='https://ollama.com']").count() == 1)
     check("renders bullet list", bubble.locator("ul li").count() >= 3)
     check("renders nested list", bubble.locator("ul ul li").count() >= 1)
     check("renders ordered list", bubble.locator("ol li").count() >= 2)
@@ -270,8 +258,8 @@ with sync_playwright() as pw:
     send(page, "это должно упасть")
     page.wait_for_selector(".msg.ai .bubble.error", timeout=20000)
     err_text = page.inner_text(".msg.ai .bubble.error")
-    check("shows the required unavailable message",
-          "Модель сейчас недоступна через Hugging Face Inference." in err_text, err_text)
+    check("shows the unavailable message",
+          "недоступна в Ollama" in err_text, err_text)
     check("error toast shown", page.locator(".toast.err").count() >= 1)
     check("status turns red", "Ошибка" in page.inner_text("#modelStatus"))
     check("app still usable", page.locator("#input").is_enabled())
@@ -281,7 +269,7 @@ with sync_playwright() as pw:
     pick_model(page, "mock/unauthorized")
     send(page, "плохой токен")
     page.wait_for_selector(".msg.ai .bubble.error", timeout=20000)
-    check("bad token message", "HF_TOKEN" in page.inner_text(".msg.ai .bubble.error"),
+    check("bad key message", "ключ Ollama" in page.inner_text(".msg.ai .bubble.error"),
           page.inner_text(".msg.ai .bubble.error"))
 
     print("\n== stop generation ==")
@@ -306,8 +294,8 @@ with sync_playwright() as pw:
     check("regenerate keeps one answer", page.locator(".msg").count() == before,
           f"{before} -> {page.locator('.msg').count()}")
 
-    print("\n== sending a message with each Hugging Face model ==")
-    for idx, family in enumerate(["DeepSeek", "Qwen", "Llama", "Mistral"]):
+    print("\n== sending a message with each card ==")
+    for idx, family in enumerate(["GPT-OSS", "Qwen3 Coder", "DeepSeek", "GPT-OSS 20B"]):
         page.click("#newChatBtn")
         page.wait_for_selector(".welcome .starters .starter", timeout=10000)
         card = page.locator(".welcome .starters .starter").nth(idx)
@@ -324,8 +312,7 @@ with sync_playwright() as pw:
                   bubble.inner_text()[:70])
         else:
             check(f"{family} shows the unavailable notice",
-                  "Модель сейчас недоступна через Hugging Face Inference."
-                  in bubble.inner_text(), bubble.inner_text()[:90])
+                  "недоступна в Ollama" in bubble.inner_text(), bubble.inner_text()[:90])
         check(f"{family} keeps the app usable", page.locator("#input").is_enabled())
 
     print("\n== persistence ==")

@@ -2,7 +2,7 @@
 
 static/app.js and static/styles.css are copied verbatim, so the extension and
 the hosted site stay the same app. Only index.html is adjusted: it loads
-static/api.js (the in-page backend) and gains a token field in Settings.
+static/api.js (the in-page backend) and gains a key field in Settings.
 
     python3 extension/build_extension.py
 """
@@ -21,26 +21,10 @@ SRC_STATIC = ROOT / "static"
 OUT_STATIC = HERE / "static"
 
 TOKEN_FIELD = """      <div class="field">
-        <label for="hfToken">Токен Hugging Face</label>
-        <input type="password" id="hfToken" placeholder="hf_..." autocomplete="off" spellcheck="false">
-        <p class="hint">Хранится только в этом браузере и отправляется напрямую в Hugging Face.
-          <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">Получить токен</a>
-        </p>
-      </div>
-
-      <div class="field">
-        <label for="ollamaKey">Ключ Ollama <span class="tag-opt">необязательно</span></label>
-        <input type="password" id="ollamaKey" placeholder="..." autocomplete="off" spellcheck="false">
-        <p class="hint">Для карточки «Ollama» — облачные модели вроде GPT-OSS и Qwen3 Coder.
+        <label for="ollamaKey">Ключ Ollama</label>
+        <input type="password" id="ollamaKey" placeholder="Вставьте ключ" autocomplete="off" spellcheck="false">
+        <p class="hint">Хранится только в этом браузере и отправляется напрямую в Ollama.
           <a href="https://ollama.com/settings/keys" target="_blank" rel="noopener">Получить ключ</a>
-        </p>
-      </div>
-
-      <div class="field">
-        <label for="deepseekKey">Ключ DeepSeek <span class="tag-opt">необязательно</span></label>
-        <input type="password" id="deepseekKey" placeholder="sk-..." autocomplete="off" spellcheck="false">
-        <p class="hint">Для карточки «DeepSeek API». Работает в обход лимитов Hugging Face, но API платный.
-          <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">Получить ключ</a>
         </p>
       </div>
 

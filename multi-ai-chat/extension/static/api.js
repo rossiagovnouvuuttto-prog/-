@@ -3,12 +3,12 @@
 
    The hosted site talks to a server at /api/*. Inside the extension
    there is no server, so this file intercepts those same paths and
-   answers them locally, talking to Hugging Face directly.
+   answers them locally, talking to Ollama Cloud directly.
 
    app.js is byte-identical to the hosted build: it still calls
-   fetch('/api/chat') and never sees the token. The token lives in
-   the browser's extension storage and is only ever sent to
-   huggingface.co in an Authorization header.
+   fetch('/api/chat') and never sees the key. The key lives in the
+   browser's extension storage and is only ever sent to ollama.com
+   in an Authorization header.
 
    Loaded BEFORE app.js so the shim is in place on first call.
    ============================================================== */
@@ -17,20 +17,15 @@
 (() => {
   const realFetch = window.fetch.bind(window);
 
-  const HF_DEFAULT_BASE = 'https://router.huggingface.co/v1';
-  const DEEPSEEK_DEFAULT_BASE = 'https://api.deepseek.com/v1';
   const OLLAMA_DEFAULT_BASE = 'https://ollama.com/v1';
-  const MODEL_ID_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$/;
-  // Ollama tags carry their own colon, as in "ollama:gpt-oss:120b-cloud".
-  const PREFIXED_ID_RE = /^(deepseek|ollama):[A-Za-z0-9._:-]+$/;
+  // An Ollama model name is "name:tag", and may be namespaced as "owner/name:tag".
+  const MODEL_ID_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)?(:[A-Za-z0-9._-]+)?$/;
   const MAX_MESSAGES = 120;
   const MAX_CHARS = 120000;
   const FEATURED_TTL_MS = 300000;
 
-  const MODEL_UNAVAILABLE = 'Модель сейчас недоступна через Hugging Face Inference.';
-  const NO_TOKEN_HINT = 'Откройте «Настройки» слева и вставьте туда токен Hugging Face.';
-  const KEY_HINT = { deepseek: 'Откройте «Настройки» и вставьте ключ DeepSeek.',
-                     ollama: 'Откройте «Настройки» и вставьте ключ Ollama.' };
+  const MODEL_UNAVAILABLE = 'Эта модель сейчас недоступна в Ollama. Выберите другую.';
+  const NO_KEY_HINT = 'Откройте «Настройки» слева и вставьте туда ключ Ollama.';
 
   let featuredCache = { at: 0, data: null };
   let catalogue = null;
@@ -55,47 +50,13 @@
   };
 
   async function settings() {
-    const got = await store.get(['hfToken', 'hfBaseUrl', 'deepseekKey', 'deepseekBaseUrl',
-                                 'ollamaKey', 'ollamaBaseUrl']);
+    const got = await store.get(['ollamaKey', 'ollamaBaseUrl']);
     return {
-      token: (got.hfToken || '').trim(),
-      baseUrl: (got.hfBaseUrl || HF_DEFAULT_BASE).replace(/\/+$/, ''),
-      dsKey: (got.deepseekKey || '').trim(),
-      dsBaseUrl: (got.deepseekBaseUrl || DEEPSEEK_DEFAULT_BASE).replace(/\/+$/, ''),
-      olKey: (got.ollamaKey || '').trim(),
-      olBaseUrl: (got.ollamaBaseUrl || OLLAMA_DEFAULT_BASE).replace(/\/+$/, ''),
+      key: (got.ollamaKey || '').trim(),
+      baseUrl: (got.ollamaBaseUrl || OLLAMA_DEFAULT_BASE).replace(/\/+$/, ''),
       timeout: 120000,
     };
   }
-
-  const PROVIDERS = [
-    { name: 'deepseek', prefix: 'deepseek:', label: 'DeepSeek',
-      baseOf: (c) => c.dsBaseUrl, keyOf: (c) => c.dsKey },
-    { name: 'ollama', prefix: 'ollama:', label: 'Ollama',
-      baseOf: (c) => c.olBaseUrl, keyOf: (c) => c.olKey },
-  ];
-
-  /** Where a model id goes, and under whose key. */
-  function routeFor(modelId, conf) {
-    for (const p of PROVIDERS) {
-      if (modelId.startsWith(p.prefix)) {
-        return {
-          provider: p.name, label: p.label,
-          baseUrl: p.baseOf(conf), key: p.keyOf(conf),
-          model: modelId.slice(p.prefix.length),
-        };
-      }
-    }
-    return { provider: 'hf', label: 'Hugging Face', baseUrl: conf.baseUrl, key: conf.token, model: modelId };
-  }
-
-  /** How a model name is compared against a provider's listing. Only the
-      Hugging Face router appends ":provider"; elsewhere a colon is part of
-      the tag, so stripping it would break the match. */
-  const normId = (provider, model) => {
-    const name = String(model).trim().toLowerCase();
-    return provider === 'hf' ? name.split(':', 1)[0] : name;
-  };
 
   /* ---------- helpers ---------- */
   const json = (body, status = 200) =>
@@ -106,7 +67,7 @@
 
   const sse = (event) => `data: ${JSON.stringify(event)}\n\n`;
 
-  function extractHfMessage(body) {
+  function extractErrorMessage(body) {
     try {
       const data = JSON.parse(body);
       if (data && typeof data === 'object') {
@@ -119,67 +80,29 @@
     return String(body).trim().slice(0, 200);
   }
 
-  function classifyHttpError(status, body, provider = 'hf') {
+  function classifyHttpError(status, body) {
     const low = (body || '').toLowerCase();
-
-    if (provider !== 'hf') {
-      const who = provider === 'ollama' ? 'Ollama' : 'DeepSeek';
-      if (status === 401 || status === 403) {
-        return { code: 'bad_token', message: `Неверный ключ ${who}. Проверьте его в «Настройках».` };
-      }
-      if (status === 402) {
-        return {
-          code: 'quota',
-          message: 'Недостаточно средств на балансе DeepSeek. Пополните его на platform.deepseek.com.',
-        };
-      }
-      if (status === 429) {
-        return { code: 'rate_limit', message: `Превышен лимит запросов ${who}. Подождите немного.` };
-      }
-      if (status === 404) {
-        return { code: 'model_unavailable', message: `Такой модели нет в ${who}.` };
-      }
-    }
-
     if (status === 401 || status === 403) {
-      if (low.includes('gated') || low.includes('awaiting approval') ||
-          (low.includes('accept') && low.includes('license'))) {
-        return {
-          code: 'model_gated',
-          message: 'Эта модель закрыта (gated). Откройте её страницу на Hugging Face и примите условия доступа.',
-        };
-      }
-      return {
-        code: 'bad_token',
-        message: 'Токен Hugging Face не подошёл. Нужен токен с правом Inference: '
-               + 'создайте его заново на huggingface.co/settings/tokens и вставьте в «Настройки».',
-      };
+      return { code: 'bad_token', message: 'Неверный ключ Ollama. Проверьте его в «Настройках».' };
     }
-    if (status === 404) return { code: 'model_unavailable', message: MODEL_UNAVAILABLE };
     if (status === 402) {
       return {
         code: 'quota',
-        message: 'Исчерпан бесплатный лимит Hugging Face на этом аккаунте. Он обновляется ежемесячно.',
+        message: 'Исчерпан лимит Ollama на этом аккаунте. Проверьте раздел Usage на ollama.com.',
       };
     }
+    if (status === 404) return { code: 'model_unavailable', message: MODEL_UNAVAILABLE };
     if (status === 429) {
-      return {
-        code: 'rate_limit',
-        message: 'Превышен лимит запросов Hugging Face. Подождите немного и повторите.',
-      };
+      return { code: 'rate_limit', message: 'Превышен лимит запросов Ollama. Подождите немного.' };
     }
     if (status === 503 || low.includes('loading')) {
       return {
         code: 'model_loading',
-        message: 'Модель загружается на стороне Hugging Face. Попробуйте ещё раз через полминуты.',
+        message: 'Модель загружается на стороне Ollama. Попробуйте ещё раз через полминуты.',
       };
     }
-    if (status === 400 && (low.includes('not supported') || low.includes('no provider') ||
-                           low.includes('unsupported'))) {
-      return { code: 'model_unavailable', message: MODEL_UNAVAILABLE };
-    }
-    const detail = extractHfMessage(body);
-    return { code: 'hf_error', message: `Ошибка Hugging Face ${status}${detail ? ` (${detail})` : ''}` };
+    const detail = extractErrorMessage(body);
+    return { code: 'api_error', message: `Ошибка Ollama ${status}${detail ? ` (${detail})` : ''}` };
   }
 
   const ROLES = new Set(['system', 'user', 'assistant']);
@@ -229,18 +152,11 @@
   }
 
   function businessError(req, conf) {
-    if (!MODEL_ID_RE.test(req.model) && !PREFIXED_ID_RE.test(req.model)) {
-      return {
-        code: 'bad_model_id',
-        message: 'Некорректный Model ID. Формат: owner/name, deepseek:имя или ollama:имя',
-      };
+    if (!MODEL_ID_RE.test(req.model)) {
+      return { code: 'bad_model_id', message: 'Некорректное имя модели. Формат: имя:тег' };
     }
-    const dest = routeFor(req.model, conf);
-    if (!dest.key) {
-      return {
-        code: 'no_token',
-        message: `Не задан ключ ${dest.label}. ${KEY_HINT[dest.provider] || NO_TOKEN_HINT}`,
-      };
+    if (!conf.key) {
+      return { code: 'no_token', message: `Не задан ключ Ollama. ${NO_KEY_HINT}` };
     }
     if (req.messages.length > MAX_MESSAGES) {
       return { code: 'too_many_messages', message: 'Слишком длинная история чата.' };
@@ -251,8 +167,8 @@
     return null;
   }
 
-  const payloadFor = (req, stream, model) => ({
-    model: model || req.model,
+  const payloadFor = (req, stream) => ({
+    model: req.model,
     messages: req.messages,
     temperature: req.temperature,
     max_tokens: req.max_tokens,
@@ -272,31 +188,30 @@
         const bizErr = businessError(req, conf);
         if (bizErr) { await send({ type: 'error', ...bizErr }); return; }
 
-        const dest = routeFor(req.model, conf);
         let resp;
         try {
-          resp = await realFetch(`${dest.baseUrl}/chat/completions`, {
+          resp = await realFetch(`${conf.baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
-              Authorization: `Bearer ${dest.key}`,
+              Authorization: `Bearer ${conf.key}`,
               'Content-Type': 'application/json',
               Accept: 'text/event-stream',
             },
-            body: JSON.stringify(payloadFor(req, true, dest.model)),
+            body: JSON.stringify(payloadFor(req, true)),
             signal,
           });
         } catch (err) {
           if (err && err.name === 'AbortError') return;
           await send({
             type: 'error', code: 'network',
-            message: `Не удалось связаться с ${dest.label}. Проверьте интернет `
-                   + 'и что расширению разрешён доступ к этому сайту.',
+            message: 'Не удалось связаться с Ollama. Проверьте интернет '
+                   + 'и что расширению разрешён доступ к ollama.com.',
           });
           return;
         }
 
         if (resp.status >= 400) {
-          await send({ type: 'error', ...classifyHttpError(resp.status, await resp.text(), dest.provider) });
+          await send({ type: 'error', ...classifyHttpError(resp.status, await resp.text()) });
           return;
         }
 
@@ -325,7 +240,7 @@
             try { chunk = JSON.parse(data); } catch { continue; }
 
             if (chunk && chunk.error) {
-              await send({ type: 'error', code: 'hf_error', message: extractHfMessage(data) || MODEL_UNAVAILABLE });
+              await send({ type: 'error', code: 'api_error', message: extractErrorMessage(data) || MODEL_UNAVAILABLE });
               return;
             }
             for (const choice of chunk.choices || []) {
@@ -365,20 +280,19 @@
     const bizErr = businessError(req, conf);
     if (bizErr) return json({ error: bizErr }, bizErr.code === 'no_token' ? 503 : 400);
 
-    const dest = routeFor(req.model, conf);
     let resp;
     try {
-      resp = await realFetch(`${dest.baseUrl}/chat/completions`, {
+      resp = await realFetch(`${conf.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${dest.key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadFor(req, false, dest.model)),
+        headers: { Authorization: `Bearer ${conf.key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payloadFor(req, false)),
         signal,
       });
     } catch {
-      return json({ error: { code: 'network', message: `Не удалось связаться с ${dest.label}.` } }, 502);
+      return json({ error: { code: 'network', message: 'Не удалось связаться с Ollama.' } }, 502);
     }
     if (resp.status >= 400) {
-      return json({ error: classifyHttpError(resp.status, await resp.text(), dest.provider) }, resp.status);
+      return json({ error: classifyHttpError(resp.status, await resp.text()) }, resp.status);
     }
 
     const data = await resp.json();
@@ -395,10 +309,10 @@
     return catalogue;
   }
 
-  async function fetchServedIds(provider, baseUrl, key) {
+  async function fetchServedIds(conf) {
     try {
-      const resp = await realFetch(`${baseUrl}/models`, {
-        headers: { Authorization: `Bearer ${key}` },
+      const resp = await realFetch(`${conf.baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${conf.key}` },
       });
       if (resp.status >= 400) return null;
       const payload = await resp.json();
@@ -407,21 +321,21 @@
       const served = new Set();
       for (const row of rows) {
         const id = row && typeof row === 'object' ? row.id : row;
-        if (typeof id === 'string' && id) served.add(normId(provider, id));
+        // The tag is part of an Ollama name, so it is never trimmed.
+        if (typeof id === 'string' && id) served.add(id.trim().toLowerCase());
       }
       return served.size ? served : null;
     } catch { return null; }
   }
 
   async function probeModel(conf, modelId) {
-    const dest = routeFor(modelId, conf);
-    if (!dest.key) return false;
+    if (!conf.key) return false;
     try {
-      const resp = await realFetch(`${dest.baseUrl}/chat/completions`, {
+      const resp = await realFetch(`${conf.baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${dest.key}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${conf.key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: dest.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false,
+          model: modelId, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false,
         }),
       });
       return resp.status < 400;
@@ -434,36 +348,28 @@
     if (featuredCache.data && !force && now - featuredCache.at < FEATURED_TTL_MS) return featuredCache.data;
 
     const card = (entry, id, status) => ({
-      key: entry.key || '', provider: entry.provider || 'hf',
-      name: entry.name || '', icon: entry.icon || '',
+      key: entry.key || '', name: entry.name || '', icon: entry.icon || '',
       desc: entry.desc || '', type: entry.type || 'normal',
       id, status, candidates: entry.candidates || [],
     });
 
-    // One listing per provider that has a key. A provider with no key needs no
-    // call at all: its cards are offline by definition.
-    const listings = { hf: conf.token ? await fetchServedIds('hf', conf.baseUrl, conf.token) : null };
-    for (const p of PROVIDERS) {
-      const key = p.keyOf(conf);
-      listings[p.name] = key ? await fetchServedIds(p.name, p.baseOf(conf), key) : null;
+    if (!conf.key) {
+      const offline = list.map((e) => card(e, (e.candidates || [])[0] || '', 'offline'));
+      featuredCache = { at: now, data: offline };
+      return offline;
     }
 
+    const served = await fetchServedIds(conf);
     const result = await Promise.all(list.map(async (entry) => {
       const cands = entry.candidates || [];
       const first = cands[0] || '';
-      const provider = entry.provider || 'hf';
-      if (!first || !routeFor(first, conf).key) return card(entry, first, 'offline');
 
-      const served = listings[provider];
       if (served) {
-        const chosen = cands.find((c) => served.has(normId(provider, routeFor(c, conf).model)));
+        const chosen = cands.find((c) => served.has(c.trim().toLowerCase()));
         if (chosen) return card(entry, chosen, 'online');
         // Ollama's cloud tags move, so a card may opt into using whatever the
         // account does serve rather than going dark.
-        if (entry.fallbackToListing) {
-          const spec = PROVIDERS.find((p) => p.name === provider);
-          return card(entry, (spec ? spec.prefix : '') + [...served].sort()[0], 'online');
-        }
+        if (entry.fallbackToListing) return card(entry, [...served].sort()[0], 'online');
         return card(entry, first, 'offline');
       }
 
@@ -488,13 +394,7 @@
     const route = url.pathname;
 
     if (route === '/api/health') {
-      return json({
-        ok: true,
-        token_configured: Boolean(conf.token),
-        deepseek_configured: Boolean(conf.dsKey),
-        ollama_configured: Boolean(conf.olKey),
-        hint: NO_TOKEN_HINT,
-      });
+      return json({ ok: true, token_configured: Boolean(conf.key), hint: NO_KEY_HINT });
     }
     if (route === '/api/models') return json(await loadCatalogue());
     if (route === '/api/featured') {
@@ -515,8 +415,6 @@
   /* ---------- token field inside Settings ---------- */
   document.addEventListener('DOMContentLoaded', async () => {
     const fields = [
-      { el: document.getElementById('hfToken'), key: 'hfToken' },
-      { el: document.getElementById('deepseekKey'), key: 'deepseekKey' },
       { el: document.getElementById('ollamaKey'), key: 'ollamaKey' },
     ].filter((f) => f.el);
     if (!fields.length) return;

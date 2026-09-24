@@ -21,11 +21,7 @@ ROOT = pathlib.Path(__file__).parent.parent
 EXT = ROOT / "extension"
 CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 MOCK_BASE = "http://127.0.0.1:8899/v1"
-DS_BASE = "http://127.0.0.1:8899/ds/v1"
-OL_BASE = "http://127.0.0.1:8899/ol/v1"
-FAKE_TOKEN = "hf_faketokenfortesting1234567890"
-FAKE_DS_KEY = "sk-faketestkey1234567890abcd"
-FAKE_OL_KEY = "ol-faketestkey1234567890abcd"
+FAKE_KEY = "ollama_test_key_1234567890"
 
 SHOTS = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/ext-shots")
 SHOTS.mkdir(parents=True, exist_ok=True)
@@ -67,7 +63,7 @@ with sync_playwright() as pw:
     allowed = manifest.get("host_permissions", [])
     api_src = (EXT / "static" / "api.js").read_text(encoding="utf-8")
     bases = _re.findall(r"_DEFAULT_BASE = 'https://([^/']+)", api_src)
-    check("found every provider default", len(bases) >= 3, str(bases))
+    check("found the provider default", len(bases) == 1, str(bases))
     for host in bases:
         check(f"manifest allows {host}",
               any(rule.startswith(f"https://{host}/") for rule in allowed), str(allowed))
@@ -93,77 +89,54 @@ with sync_playwright() as pw:
 
     check("chat page opens from the extension", page.title() == "Multi AI Chat", page.title())
     check("welcome screen renders", page.locator(".welcome h1").inner_text() == "Multi AI Chat")
-    check("six starter cards", page.locator(".welcome .starter").count() == 6,
+    check("four starter cards", page.locator(".welcome .starter").count() == 4,
           str(page.locator(".welcome .starter").count()))
 
-    print("\n== without a token ==")
-    statuses = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(6)]
-    check("all cards read Offline", statuses == ["Offline"] * 6, str(statuses))
-    check("status bar warns", "HF_TOKEN" in page.inner_text("#modelStatus"), page.inner_text("#modelStatus"))
+    print("\n== without a key ==")
+    statuses = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(4)]
+    check("all cards read Offline", statuses == ["Offline"] * 4, str(statuses))
+    check("status bar warns", "Ключ" in page.inner_text("#modelStatus"), page.inner_text("#modelStatus"))
     toast = page.locator(".toast.err").first
     check("hint points at Settings, not hosting",
           "Настройки" in toast.inner_text(), toast.inner_text()[:90])
     page.screenshot(path=str(SHOTS / "E1-no-token.png"), full_page=True)
 
-    print("\n== entering the token in Settings ==")
+    print("\n== entering the key in Settings ==")
     page.click("#settingsBtn")
     page.wait_for_selector("#settingsModal:not([hidden])")
-    check("token field present", page.locator("#hfToken").count() == 1)
-    check("token field is masked", page.get_attribute("#hfToken", "type") == "password")
-    check("DeepSeek key field present", page.locator("#deepseekKey").count() == 1)
-    check("DeepSeek key field is masked",
-          page.get_attribute("#deepseekKey", "type") == "password")
-    check("Ollama key field present", page.locator("#ollamaKey").count() == 1)
-    check("Ollama key field is masked",
-          page.get_attribute("#ollamaKey", "type") == "password")
+    check("key field present", page.locator("#ollamaKey").count() == 1)
+    check("key field is masked", page.get_attribute("#ollamaKey", "type") == "password")
+    check("no leftover fields from removed providers",
+          page.locator("#hfToken").count() == 0 and page.locator("#deepseekKey").count() == 0)
     page.screenshot(path=str(SHOTS / "E2-settings.png"))
 
-    # Point the shim at the stand-in router first, so the refresh that entering
-    # a token triggers can be observed. A user never touches this setting.
-    page.evaluate("base => chrome.storage.local.set({ hfBaseUrl: base })", MOCK_BASE)
+    # Point the shim at the stand-in first, so the refresh that entering a key
+    # triggers can be observed. A user never touches this setting.
+    page.evaluate("base => chrome.storage.local.set({ ollamaBaseUrl: base })", MOCK_BASE)
 
-    page.fill("#hfToken", FAKE_TOKEN)
+    page.fill("#ollamaKey", FAKE_KEY)
     page.wait_for_timeout(2500)
-    stored = page.evaluate("async () => (await chrome.storage.local.get(['hfToken'])).hfToken")
-    check("token saved to extension storage", stored == FAKE_TOKEN, str(stored))
+    stored = page.evaluate("async () => (await chrome.storage.local.get(['ollamaKey'])).ollamaKey")
+    check("key saved to extension storage", stored == FAKE_KEY, str(stored))
 
-    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(6)]
+    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(4)]
     check("cards go live without a page reload", live.count("Online") == 3, str(live))
-    check("the other providers wait for their own keys",
-          live[4] == "Offline" and live[5] == "Offline", str(live))
-
-    # now the second provider
-    page.evaluate("base => chrome.storage.local.set({ deepseekBaseUrl: base })", DS_BASE)
-    page.fill("#deepseekKey", FAKE_DS_KEY)
-    page.wait_for_timeout(2500)
-    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(6)]
-    check("DeepSeek card goes online with its key", live[4] == "Online", str(live))
-    ds_id = page.locator(".welcome .starter .s-id").nth(4).inner_text()
-    check("DeepSeek card uses a prefixed id", ds_id.startswith("deepseek:"), ds_id)
-
-    # and the third provider
-    page.evaluate("base => chrome.storage.local.set({ ollamaBaseUrl: base })", OL_BASE)
-    page.fill("#ollamaKey", FAKE_OL_KEY)
-    page.wait_for_timeout(2500)
-    live = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(6)]
-    check("Ollama card goes online with its key", live[5] == "Online", str(live))
-    ol_id = page.locator(".welcome .starter .s-id").nth(5).inner_text()
-    check("Ollama id keeps its tag colon",
-          ol_id.startswith("ollama:") and ":" in ol_id[len("ollama:"):], ol_id)
+    check("tags keep their colon",
+          all(":" in page.locator(".welcome .starter .s-id").nth(i).inner_text() for i in range(4)))
 
     page.click("#settingsModal [data-close]")
     page.reload(wait_until="networkidle")
 
-    print("\n== with a token ==")
+    print("\n== with a key ==")
     page.wait_for_selector(".welcome .starter", timeout=15000)
     page.wait_for_timeout(1200)
     names = [page.locator(".welcome .starter .s-name").nth(i).inner_text() for i in range(4)]
-    check("families listed", names == ["DeepSeek", "Qwen", "Llama", "Mistral"], str(names))
+    check("cards listed", names == ["GPT-OSS", "Qwen3 Coder", "DeepSeek", "GPT-OSS 20B"], str(names))
     statuses = [page.locator(".welcome .starter .s-status").nth(i).inner_text().strip() for i in range(4)]
     check("three online, one offline",
           statuses.count("Online") == 3 and statuses.count("Offline") == 1, str(statuses))
     ids = [page.locator(".welcome .starter .s-id").nth(i).inner_text() for i in range(4)]
-    check("Qwen fell back inside its family", "Qwen/Qwen2.5-7B-Instruct" in ids, str(ids))
+    check("a retired tag fell back to a sibling", "qwen3-coder:30b-cloud" in ids, str(ids))
     check("status bar back to Online", "Online" in page.inner_text("#modelStatus"))
     page.screenshot(path=str(SHOTS / "E3-ready.png"), full_page=True)
 
@@ -182,13 +155,13 @@ with sync_playwright() as pw:
     print("\n== offline family still degrades gracefully ==")
     page.click("#newChatBtn")
     page.wait_for_selector(".welcome .starter", timeout=10000)
-    page.locator(".welcome .starter").nth(2).click()      # Llama
+    page.locator(".welcome .starter").nth(2).click()      # the offline card
     page.wait_for_timeout(300)
     page.fill("#input", "привет")
     page.click("#sendBtn")
     page.wait_for_selector(".msg.ai .bubble.error", timeout=30000)
     check("shows the unavailable notice",
-          "Модель сейчас недоступна через Hugging Face Inference." in page.inner_text(".msg.ai .bubble.error"),
+          "недоступна в Ollama" in page.inner_text(".msg.ai .bubble.error"),
           page.inner_text(".msg.ai .bubble.error")[:90])
     check("app stays usable", page.locator("#input").is_enabled())
 
@@ -196,20 +169,19 @@ with sync_playwright() as pw:
     page.reload(wait_until="networkidle")
     page.click("#settingsBtn")
     page.wait_for_selector("#settingsModal:not([hidden])")
-    check("token survives reload", page.input_value("#hfToken") == FAKE_TOKEN)
+    check("key survives reload", page.input_value("#ollamaKey") == FAKE_KEY)
     page.click("#settingsModal [data-close]")
     check("chats survive reload", page.locator(".chat-item").count() >= 2,
           str(page.locator(".chat-item").count()))
 
-    print("\n== the token is not baked into any file ==")
+    print("\n== the key is not baked into any file ==")
     leaked = []
     for rel in ("index.html", "static/app.js", "static/styles.css", "static/api.js",
                 "manifest.json", "background.js", "models.json"):
         text = (EXT / rel).read_text(encoding="utf-8")
-        if FAKE_TOKEN in text or "hf_" in text and "hf_..." not in text and "hf_x" not in text:
-            if FAKE_TOKEN in text:
-                leaked.append(rel)
-    check("no token in the shipped files", not leaked, str(leaked))
+        if FAKE_KEY in text:
+            leaked.append(rel)
+    check("no key in the shipped files", not leaked, str(leaked))
 
     print("\n== mobile ==")
     mob = ctx.new_page()
@@ -235,7 +207,7 @@ with sync_playwright() as pw:
     # Two upstream failures are part of the script: the offline family returns
     # 404, and the first page load reaches the real router before the test
     # repoints it at the stand-in (no outbound network in this sandbox).
-    expected = ("404 http://127.0.0.1:8899/v1/chat/completions", "router.huggingface.co")
+    expected = ("404 http://127.0.0.1:8899/v1/chat/completions", "ollama.com")
     unexpected = [r for r in bad_responses
                   if "favicon" not in r.lower() and not any(e in r for e in expected)]
     check("no unexpected failing requests", not unexpected, "; ".join(unexpected[:5]))

@@ -2,13 +2,11 @@
   "manifest_version": 3,
   "name": "Multi AI Chat",
   "version": "1.0.0",
-  "description": "Чат с нейросетями Hugging Face: DeepSeek, Qwen, Llama, Mistral и другие.",
+  "description": "Чат с облачными моделями Ollama: GPT-OSS, Qwen3 Coder, DeepSeek и другие.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
-    "https://router.huggingface.co/*",
-    "https://api.deepseek.com/*",
     "https://ollama.com/*"
   ],
   "action": {

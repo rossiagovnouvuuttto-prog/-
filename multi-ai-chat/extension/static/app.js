@@ -1,6 +1,6 @@
 /* ==============================================================
    Multi AI Chat - frontend
-   The Hugging Face token lives on the server only. This file never
+   The Ollama key lives on the server only. This file never
    sees it: every completion goes through POST /api/chat.
    ============================================================== */
 'use strict';
@@ -334,8 +334,8 @@ function modelLabel(id) {
 
 /* ==============================================================
    Starter cards - the four featured models
-   The backend resolves each family to a Model ID that Hugging Face
-   actually serves, and tells us whether it is online.
+   The backend resolves each card to a model the account actually
+   has, and tells us whether it is online.
    ============================================================== */
 async function loadFeatured() {
   try {
@@ -375,7 +375,7 @@ function starterCard(f) {
       toast('ok', `${f.icon} ${f.name} выбран`, f.id, 2600);
     } else {
       toast('err', `${f.name} сейчас офлайн`,
-        'Модель сейчас недоступна через Hugging Face Inference. Выберите другую карточку.', 7000);
+        'Эта модель сейчас недоступна в Ollama. Выберите другую карточку.', 7000);
     }
     closeModal('modelModal');
     renderChat();
@@ -879,7 +879,7 @@ class StreamError extends Error {
 function errorTitle(err) {
   const map = {
     bad_token: 'Проблема с токеном',
-    no_token: 'HF_TOKEN не задан',
+    no_token: 'Ключ Ollama не задан',
     model_unavailable: 'Модель недоступна',
     model_gated: 'Закрытая модель',
     model_loading: 'Модель загружается',
@@ -935,7 +935,7 @@ function renderPicker() {
   box.innerHTML = '';
   if (!visible.length) {
     box.appendChild(el('div', 'picker-empty',
-      'Ничего не найдено. Добавьте модель по Model ID внизу окна.'));
+      'Ничего не найдено. Добавьте модель по имени внизу окна.'));
     return;
   }
 
@@ -986,8 +986,8 @@ function addCustomModel() {
   const input = $('customModel');
   const id = input.value.trim();
   if (!id) return;
-  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+(:[A-Za-z0-9._-]+)?$/.test(id)) {
-    toast('err', 'Неверный Model ID', 'Формат: owner/name, например Qwen/Qwen2.5-7B-Instruct');
+  if (!/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)?(:[A-Za-z0-9._-]+)?$/.test(id)) {
+    toast('err', 'Неверное имя модели', 'Формат: имя:тег, например gpt-oss:120b-cloud');
     return;
   }
   if (allModels().some((m) => m.id === id)) {
@@ -1100,11 +1100,11 @@ async function checkHealth() {
     const res = await fetch('/api/health');
     const data = await res.json();
     if (!data.token_configured) {
-      setStatus('err', 'HF_TOKEN не задан');
+      setStatus('err', 'Ключ не задан');
       // The hint comes from the backend, so the hosted site and the browser
       // extension can each say where the token actually belongs.
-      toast('err', 'HF_TOKEN не настроен',
-        data.hint || 'Добавьте секрет HF_TOKEN в настройках хостинга и перезапустите приложение.',
+      toast('err', 'Ключ Ollama не задан',
+        data.hint || 'Добавьте ключ Ollama в настройках хостинга и перезапустите приложение.',
         12000);
     } else {
       setStatus('', 'Online');
